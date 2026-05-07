@@ -1,1 +1,1 @@
-my-folder/readme.md
+template/readme.md
