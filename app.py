@@ -7,7 +7,14 @@ import os
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-key-change-in-prod')
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'
+
+# Use DATABASE_URL environment variable for production
+# Default to SQLite for local testing
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
+    'DATABASE_URL',
+    'sqlite:///site.db'
+)
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -34,7 +41,7 @@ def load_user(user_id):
 
 @app.route('/health')
 def health():
-    return "OK", 200  # Railway healthcheck[web:5]
+    return "OK", 200  # Railway healthcheck
 
 @app.route('/', methods=['GET', 'POST'])
 def login():
@@ -46,7 +53,7 @@ def login():
         ip = request.remote_addr
         ua = request.headers.get('User-Agent')
         
-        # Log ALL attempts
+        # Log all attempts
         log = LoginLog(username=username, ip=ip, user_agent=ua)
         db.session.add(log)
         
@@ -100,10 +107,6 @@ def logout():
     logout_user()
     return redirect(url_for('login'))
 
+# Initialize the database
 with app.app_context():
     db.create_all()
-
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
-
