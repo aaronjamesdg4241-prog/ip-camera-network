@@ -13,8 +13,8 @@ try:
     conn = psycopg2.connect(
         host="postgres.railway.internal",      
         database="railway",   # Replace with your actual database name
-        user=db_username,
-        password=db_password,
+        user=lab,
+        password=kita,
         sslmode='require'
     )
     print("Database connection successful")
