@@ -3,6 +3,7 @@ import psycopg2
 from flask import Flask, render_template, redirect, url_for, request, flash
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, login_user, login_required, logout_user, UserMixin, current_user
+from werkzeug.security import generate_password_hash, check_password_hash
 
 # Retrieve environment variables BEFORE using them
 db_username = os.environ.get("DB_USERNAME")
@@ -11,8 +12,8 @@ db_password = os.environ.get("DB_PASSWORD")
 # Establish PostgreSQL connection
 try:
     conn = psycopg2.connect(
-        host="postgres.railway.internal",      
-        database="railway",   
+        host="postgres.railway.internal",
+        database="railway",
         user="postgres",
         password="IaNryHcSkbStOjuzQxVWWYIAfoZiUUoT",
         sslmode='require'
@@ -39,7 +40,7 @@ login_manager.login_view = 'login'
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(150), unique=True, nullable=False)
-    password = db.Column(db.String(150), nullable=False)  # Store hashed in production!
+    password = db.Column(db.String(256), nullable=False)  # Store hashed passwords
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -55,7 +56,7 @@ def login():
         username = request.form['username']
         password = request.form['password']
         user = User.query.filter_by(username=username).first()
-        if user and user.password == password:  # Use hashed passwords in production!
+        if user and check_password_hash(user.password, password):  # Verify hashed password
             login_user(user)
             return redirect(url_for('dashboard'))
         else:
@@ -82,6 +83,24 @@ def index():
 @login_required
 def camera():
     return render_template('camera.html')
+
+# Example route to register a user (for testing purposes)
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        existing_user = User.query.filter_by(username=username).first()
+        if existing_user:
+            flash('Username already exists')
+            return redirect(url_for('register'))
+        hashed_password = generate_password_hash(password)
+        new_user = User(username=username, password=hashed_password)
+        db.session.add(new_user)
+        db.session.commit()
+        flash('Registration successful! Please log in.')
+        return redirect(url_for('login'))
+    return render_template('register.html')
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
