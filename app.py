@@ -1,7 +1,15 @@
 import os
+import psycopg2
 from flask import Flask, render_template, redirect, url_for, request, flash
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, login_user, login_required, logout_user, UserMixin, current_user
+
+conn = psycopg2.connect(
+    host="your-db-host",
+    database="your-db-name",
+    user=db_username,
+    password=db_password
+)
 
 db_username = os.environ.get("DB_USERNAME")
 db_password = os.environ.get("DB_PASSWORD")
