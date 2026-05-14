@@ -4,20 +4,26 @@ from flask import Flask, render_template, redirect, url_for, request, flash
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, login_user, login_required, logout_user, UserMixin, current_user
 
-conn = psycopg2.connect(
-    host="your-db-host",
-    database="your-db-name",
-    user=db_username,
-    password=db_password
-)
-
+# Retrieve environment variables BEFORE using them
 db_username = os.environ.get("DB_USERNAME")
 db_password = os.environ.get("DB_PASSWORD")
 
-app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'supersecretkey')  # set secret key
+# Establish PostgreSQL connection
+try:
+    conn = psycopg2.connect(
+        host="your-db-host",       # Replace with your actual host
+        database="your-db-name",   # Replace with your actual database name
+        user=db_username,
+        password=db_password
+    )
+    print("Database connection successful")
+except Exception as e:
+    print("Error connecting to database:", e)
 
-# Database Configuration for Railway PostgreSQL
+app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'supersecretkey')  # Set secret key
+
+# Configure SQLAlchemy with environment variable (Railway)
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')  # Railway sets this env variable
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -70,7 +76,7 @@ def dashboard():
 def index():
     return redirect(url_for('login'))
 
-# Existing route for camera.html, protected
+# Protected route for camera.html
 @app.route('/camera')
 @login_required
 def camera():
