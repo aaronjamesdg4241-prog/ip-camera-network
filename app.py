@@ -1,112 +1,138 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, Response
-from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
-from flask_sqlalchemy import SQLAlchemy
+from flask import Flask, render_template_string, request, redirect, url_for, session, flash
 from werkzeug.security import generate_password_hash, check_password_hash
-from camera import Camera
-import os
+import datetime
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-key-change-in-prod')
+app.secret_key = 'super-secret-key-change-in-prod'
 
-# Use DATABASE_URL environment variable for production
-# Default to SQLite for local testing
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
-    'DATABASE_URL',
-    'sqlite:///site.db'
-)
+users = {}  
+logs = []   
 
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+LOGIN_HTML = '''
+<!DOCTYPE html>
+<html><head><title>Login System</title></head>
+<body>
+  <h2>Strict Login & Auth System</h2>
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <ul style="color: red;">{% for message in messages %}<li>{{ message }}</li>{% endfor %}</ul>
+    {% endif %}
+  {% endwith %}
+  <form method="POST">
+    Username: <input name="username" required><br><br>
+    Password: <input name="password" type="password" required><br><br>
+    <button type="submit">Login</button>
+  </form>
+  <br><a href="/register">Register New User</a> | <a href="/logs">View Login Logs</a>
+</body></html>
+'''
 
-db = SQLAlchemy(app)
-login_manager = LoginManager(app)
-login_manager.login_view = 'login'
+REGISTER_HTML = '''
+<!DOCTYPE html>
+<html><head><title>Register</title></head>
+<body>
+  <h2>Register</h2>
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <ul>{% for message in messages %}<li>{{ message }}</li>{% endfor %}</ul>
+    {% endif %}
+  {% endwith %}
+  <form method="POST">
+    Username: <input name="username" required><br><br>
+    Password: <input name="password" type="password" required><br><br>
+    <button type="submit">Register</button>
+  </form>
+  <br><a href="/">Back to Login</a>
+</body></html>
+'''
 
-# Models
-class User(UserMixin, db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    password_hash = db.Column(db.String(256), nullable=False)
+DASHBOARD_HTML = '''
+<!DOCTYPE html>
+<html><head><title>Dashboard</title></head>
+<body>
+  <h2>Protected Dashboard</h2>
+  <p>Welcome, {{ username }}! You are authenticated.</p>
+  <p><a href="/logs">View All Login Logs</a></p>
+  <form method="POST" action="/logout">
+    <button type="submit">Logout</button>
+  </form>
+</body></html>
+'''
 
-class LoginLog(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), nullable=False)
-    ip = db.Column(db.String(45))
-    user_agent = db.Column(db.String(200))
-    success = db.Column(db.Boolean, default=False)
-    timestamp = db.Column(db.DateTime, default=db.func.current_timestamp())
-
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(int(user_id))
-
-@app.route('/health')
-def health():
-    return "OK", 200  # Railway healthcheck
+LOGS_HTML = '''
+<!DOCTYPE html>
+<html><head><title>Logs</title></head>
+<body>
+  <h2>All Login Attempts ({{ logs|length }} total)</h2>
+  <table border="1">
+    <tr><th>Time</th><th>Username</th><th>IP</th><th>Success</th></tr>
+    {% for log in logs %}
+    <tr>
+      <td>{{ log.time }}</td><td>{{ log.username }}</td><td>{{ log.ip }}</td><td>{{ 'Yes' if log.success else 'No' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <br><a href="/dashboard">Dashboard</a> | <a href="/">Logout</a>
+</body></html>
+'''
 
 @app.route('/', methods=['GET', 'POST'])
 def login():
-    if current_user.is_authenticated:
-        return redirect(url_for('dashboard'))
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
         ip = request.remote_addr
-        ua = request.headers.get('User-Agent')
         
-        # Log all attempts
-        log = LoginLog(username=username, ip=ip, user_agent=ua)
-        db.session.add(log)
+        logs.append(type('Log', (), {
+            'time': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'username': username,
+            'ip': ip,
+            'success': False
+        }))
         
-        user = User.query.filter_by(username=username).first()
-        if user and check_password_hash(user.password_hash, password):
-            login_user(user)
-            log.success = True
-            db.session.commit()
-            flash('Login successful!')
-            return redirect(url_for('dashboard'))
-        else:
-            flash('Invalid credentials')
-            db.session.commit()
-    return render_template('login.html')
+        if username in users:
+            if check_password_hash(users[username], password):
+                session['user'] = username
+                logs[-1].success = True  # Update last log
+                flash('Login successful!')
+                return redirect(url_for('dashboard'))
+        
+        flash('Invalid credentials')
+        return render_template_string(LOGIN_HTML)
+    
+    return render_template_string(LOGIN_HTML)
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
-        if User.query.filter_by(username=username).first():
-            flash('User exists')
+        if username in users:
+            flash('Username exists!')
         else:
-            hashed = generate_password_hash(password)
-            user = User(username=username, password_hash=hashed)
-            db.session.add(user)
-            db.session.commit()
+            users[username] = generate_password_hash(password)
             flash('Registered! Login now.')
             return redirect(url_for('login'))
-    return render_template('register.html')
+    return render_template_string(REGISTER_HTML)
 
 @app.route('/dashboard')
-@login_required
 def dashboard():
-    return render_template('dashboard.html')
+    if 'user' not in session:
+        flash('Access denied. Login required.')
+        return redirect(url_for('login'))
+    return render_template_string(DASHBOARD_HTML, username=session['user'], logs=logs)
 
-@app.route('/video_feed')
-@login_required
-def video_feed():
-    return Response(gen(Camera()), mimetype='multipart/x-mixed-replace; boundary=frame')
+@app.route('/logs')
+def logs():
+    if 'user' not in session:
+        return redirect(url_for('login'))
+    return render_template_string(LOGS_HTML, logs=logs)
 
-def gen(camera):
-    while True:
-        frame = camera.get_frame()
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n\r\n')
-
-@app.route('/logout')
-@login_required
+@app.route('/logout', methods=['POST'])
 def logout():
-    logout_user()
+    session.pop('user', None)
+    flash('Logged out.')
     return redirect(url_for('login'))
 
-# Initialize the database
-with app.app_context():
-    db.create_all()
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)
