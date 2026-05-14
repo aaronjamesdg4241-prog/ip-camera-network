@@ -11,8 +11,8 @@ db_password = os.environ.get("DB_PASSWORD")
 # Establish PostgreSQL connection
 try:
     conn = psycopg2.connect(
-        host="your-db-host",       # Replace with your actual host
-        database="your-db-name",   # Replace with your actual database name
+        host="postgres.railway.internal",      
+        database="railway",   # Replace with your actual database name
         user=db_username,
         password=db_password
     )
