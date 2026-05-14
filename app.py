@@ -14,7 +14,8 @@ try:
         host="postgres.railway.internal",      
         database="railway",   # Replace with your actual database name
         user=db_username,
-        password=db_password
+        password=db_password,
+        sslmode='require'
     )
     print("Database connection successful")
 except Exception as e:
