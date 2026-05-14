@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<html>
+<head><title>Camera Dashboard</title></head>
+<body>
+  <h2>Live Camera Feed ({{ current_user.username }})</h2>
+  <img src="{{ url_for('video_feed') }}" width="640" height="480">
+  <br><a href="{{ url_for('logout') }}">Logout</a>
+</body>
+</html>
+
