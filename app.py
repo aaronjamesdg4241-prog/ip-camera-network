@@ -1,6 +1,6 @@
 import os
 import psycopg2
-from flask import Flask, render_template, redirect, url_for, request, flash
+from flask import Flask, render_template, redirect, url_for, request, flash, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, login_user, login_required, logout_user, UserMixin, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -50,17 +50,37 @@ def load_user(user_id):
 with app.app_context():
     db.create_all()
 
+# Max login attempts before lockout
+MAX_LOGIN_ATTEMPTS = 3
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    if 'failed_attempts' not in session:
+        session['failed_attempts'] = 0
+
     if request.method == 'POST':
+        # Check if user is already locked out
+        if session['failed_attempts'] >= MAX_LOGIN_ATTEMPTS:
+            flash('Too many failed attempts. Please try again later.')
+            return render_template('login.html')
+        
         username = request.form['username']
         password = request.form['password']
         user = User.query.filter_by(username=username).first()
-        if user and check_password_hash(user.password, password):  # Verify hashed password
+
+        if user and check_password_hash(user.password, password):
+            # Reset failed attempts on successful login
+            session['failed_attempts'] = 0
             login_user(user)
             return redirect(url_for('dashboard'))
         else:
-            flash('Invalid credentials')
+            # Increment failed attempts
+            session['failed_attempts'] += 1
+            remaining_attempts = MAX_LOGIN_ATTEMPTS - session['failed_attempts']
+            if remaining_attempts > 0:
+                flash(f'Invalid credentials. {remaining_attempts} attempts remaining.')
+            else:
+                flash('Too many failed attempts. You are locked out.')
     return render_template('login.html')
 
 @app.route('/logout')
