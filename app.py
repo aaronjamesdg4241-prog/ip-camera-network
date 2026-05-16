@@ -1,32 +1,14 @@
 import os
-import psycopg2
 from flask import Flask, render_template, redirect, url_for, request, flash, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, login_user, login_required, logout_user, UserMixin, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 
-# Retrieve environment variables BEFORE using them
-db_username = os.environ.get("DB_USERNAME")
-db_password = os.environ.get("DB_PASSWORD")
-
-# Establish PostgreSQL connection
-try:
-    conn = psycopg2.connect(
-        host="postgres.railway.internal",
-        database="railway",
-        user="postgres",
-        password="IaNryHcSkbStOjuzQxVWWYIAfoZiUUoT",
-        sslmode='require'
-    )
-    print("Database connection successful")
-except Exception as e:
-    print("Error connecting to database:", e)
-
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'supersecretkey')  # Set secret key
+app.secret_key = os.environ.get('SECRET_KEY', 'supersecretkey') 
 
-# Configure SQLAlchemy with environment variable (Railway)
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')  # Railway sets this env variable
+# Configure SQLAlchemy using Railway's environment variable
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -40,17 +22,16 @@ login_manager.login_view = 'login'
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(150), unique=True, nullable=False)
-    password = db.Column(db.String(256), nullable=False)  # Store hashed passwords
+    password = db.Column(db.String(256), nullable=False) 
 
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# Create database tables if they don't exist
+# Create database tables automatically
 with app.app_context():
     db.create_all()
 
-# Max login attempts before lockout
 MAX_LOGIN_ATTEMPTS = 3
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -59,9 +40,8 @@ def login():
         session['failed_attempts'] = 0
 
     if request.method == 'POST':
-        # Check if user is already locked out
         if session['failed_attempts'] >= MAX_LOGIN_ATTEMPTS:
-            flash('Too many failed attempts. Please try again later.')
+            flash('Too many failed attempts. Please try again later.', 'error')
             return render_template('login.html')
         
         username = request.form['username']
@@ -69,18 +49,17 @@ def login():
         user = User.query.filter_by(username=username).first()
 
         if user and check_password_hash(user.password, password):
-            # Reset failed attempts on successful login
             session['failed_attempts'] = 0
             login_user(user)
             return redirect(url_for('dashboard'))
         else:
-            # Increment failed attempts
             session['failed_attempts'] += 1
             remaining_attempts = MAX_LOGIN_ATTEMPTS - session['failed_attempts']
             if remaining_attempts > 0:
-                flash(f'Invalid credentials. {remaining_attempts} attempts remaining.')
+                flash(f'Invalid credentials. {remaining_attempts} attempts remaining.', 'error')
             else:
-                flash('Too many failed attempts. You are locked out.')
+                flash('Too many failed attempts. You are locked out.', 'error')
+                
     return render_template('login.html')
 
 @app.route('/logout')
@@ -98,13 +77,11 @@ def dashboard():
 def index():
     return redirect(url_for('login'))
 
-# Protected route for camera.html
 @app.route('/camera')
 @login_required
 def camera():
     return render_template('camera.html')
 
-# Example route to register a user (for testing purposes)
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
@@ -112,13 +89,14 @@ def register():
         password = request.form['password']
         existing_user = User.query.filter_by(username=username).first()
         if existing_user:
-            flash('Username already exists')
+            flash('Username already exists', 'error')
             return redirect(url_for('register'))
+        
         hashed_password = generate_password_hash(password)
         new_user = User(username=username, password=hashed_password)
         db.session.add(new_user)
         db.session.commit()
-        flash('Registration successful! Please log in.')
+        flash('Registration successful! Please log in.', 'success')
         return redirect(url_for('login'))
     return render_template('register.html')
 
