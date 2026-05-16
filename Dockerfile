@@ -13,4 +13,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["python", "app.py"]
+# Run the database seeder first, then start Gunicorn on port 8080
+CMD ["sh", "-c", "python seed.py && gunicorn -b 0.0.0.0:8080 app:app"]
