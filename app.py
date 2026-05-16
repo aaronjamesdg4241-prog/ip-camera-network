@@ -10,7 +10,7 @@ app.secret_key = os.environ.get('SECRET_KEY', 'supersecretkey')
 # Fetch Railway's DATABASE_URL variable
 raw_db_url = os.environ.get('DATABASE_URL')
 
-# Critical Fix: SQLAlchemy 2.0+ requires 'postgresql+psycopg2://' instead of 'postgresql://'
+# Driver Patch: SQLAlchemy 2.0+ strictly requires 'postgresql+psycopg2://' instead of 'postgresql://'
 if raw_db_url and raw_db_url.startswith("postgresql://"):
     raw_db_url = raw_db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
 
@@ -28,7 +28,7 @@ login_manager.login_view = 'login'
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(150), unique=True, nullable=False)
-    password = db.Column(db.String(256), nullable=False) 
+    password = db.Column(db.Text, nullable=False)  # Text type handles long modern scrypt hashes cleanly
 
 @login_manager.user_loader
 def load_user(user_id):
