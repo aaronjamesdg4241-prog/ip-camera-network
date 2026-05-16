@@ -7,10 +7,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'supersecretkey') 
 
-# Fetch Railway's DATABASE_URL variable
 raw_db_url = os.environ.get('DATABASE_URL')
 
-# Driver Patch: SQLAlchemy 2.0+ strictly requires 'postgresql+psycopg2://' instead of 'postgresql://'
+# Driver Patch for SQLAlchemy 2.0+ 
 if raw_db_url and raw_db_url.startswith("postgresql://"):
     raw_db_url = raw_db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
 
@@ -19,22 +18,20 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 
-# Flask-Login setup
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
-# User model
+# User model with dynamic Text type for modern secure hashes
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(150), unique=True, nullable=False)
-    password = db.Column(db.Text, nullable=False)  # Text type handles long modern scrypt hashes cleanly
+    password = db.Column(db.Text, nullable=False)
 
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# Automatically generate database tables if they do not exist
 with app.app_context():
     db.create_all()
 
