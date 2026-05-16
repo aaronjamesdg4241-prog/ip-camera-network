@@ -7,8 +7,14 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'supersecretkey') 
 
-# Configure SQLAlchemy using Railway's environment variable
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
+# Fetch Railway's DATABASE_URL variable
+raw_db_url = os.environ.get('DATABASE_URL')
+
+# Critical Fix: SQLAlchemy 2.0+ requires 'postgresql+psycopg2://' instead of 'postgresql://'
+if raw_db_url and raw_db_url.startswith("postgresql://"):
+    raw_db_url = raw_db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+
+app.config['SQLALCHEMY_DATABASE_URI'] = raw_db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -28,7 +34,7 @@ class User(UserMixin, db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# Create database tables automatically
+# Automatically generate database tables if they do not exist
 with app.app_context():
     db.create_all()
 
