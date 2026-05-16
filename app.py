@@ -37,18 +37,37 @@ def load_user(user_id):
 with app.app_context():
     db.create_all()
 
+# Max login configurations
+MAX_LOGIN_ATTEMPTS = 3
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    # Initialize the attempt counter in the user's session if it doesn't exist
+    if 'failed_attempts' not in session:
+        session['failed_attempts'] = 0
+
     if request.method == 'POST':
+        # Instantly block submission if they are already locked out
+        if session['failed_attempts'] >= MAX_LOGIN_ATTEMPTS:
+            flash('Too many failed attempts. You are locked out.', 'error')
+            return render_template('login.html')
+        
         username = request.form['username']
         password = request.form['password']
         user = User.query.filter_by(username=username).first()
 
         if user and check_password_hash(user.password, password):
+            session['failed_attempts'] = 0  # Reset counter on successful login
             login_user(user)
             return redirect(url_for('dashboard'))
         else:
-            flash('Invalid credentials. Please try again.', 'error')
+            session['failed_attempts'] += 1
+            remaining_attempts = MAX_LOGIN_ATTEMPTS - session['failed_attempts']
+            
+            if remaining_attempts > 0:
+                flash(f'Invalid credentials. {remaining_attempts} attempts remaining.', 'error')
+            else:
+                flash('Too many failed attempts. You are locked out.', 'error')
                 
     return render_template('login.html')
 
