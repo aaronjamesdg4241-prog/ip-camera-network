@@ -1,26 +1,87 @@
+DASHBOARD_HTML = '''
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Dashboard</title>
-<style>
-  body { font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; }
-  header { background: #333; color: #fff; padding: 10px; display: flex; justify-content: space-between; align-items: center; }
-  a { color: #fff; text-decoration: none; margin-left: 10px; }
-  .container { padding: 20px; }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f6f8;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        .dashboard-card {
+            background: white;
+            padding: 32px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+        }
+
+        h2 {
+            margin-top: 0;
+            color: #111;
+            font-size: 1.5rem;
+        }
+
+        .welcome-msg {
+            color: #666;
+            margin-bottom: 24px;
+        }
+
+        .log-link {
+            display: inline-block;
+            color: #0066cc;
+            text-decoration: none;
+            font-weight: 500;
+            margin-bottom: 24px;
+        }
+
+        .log-link:hover {
+            text-decoration: underline;
+        }
+
+        .logout-btn {
+            width: 100%;
+            background-color: #ff3b30;
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .logout-btn:hover {
+            background-color: #e03126;
+        }
+    </style>
 </head>
 <body>
-<header>
-  <h1>Camera Network Dashboard</h1>
-  <div>
-    <a href="{{ url_for('logout') }}">Logout</a>
+
+  <div class="dashboard-card">
+      <h2>Protected Dashboard</h2>
+      <p class="welcome-msg">Welcome, <strong>{{ username }}</strong>! You are authenticated.</p>
+      
+      <p><a class="log-link" href="/logs">View All Login Logs →</a></p>
+      
+      <form method="POST" action="/logout">
+          <button type="submit" class="logout-btn">Logout</button>
+      </form>
   </div>
-</header>
-<div class="container">
-  <p>Welcome, {{ current_user.username }}!</p>
-  <a href="{{ url_for('camera') }}" style="color: #007bff; text-decoration: underline;">Go to Camera Feed</a>
-</div>
+
 </body>
 </html>
+'''
+
