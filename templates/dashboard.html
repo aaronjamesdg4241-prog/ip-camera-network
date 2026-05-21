@@ -3,156 +3,228 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Dashboard</title>
+    <title>DCGL Live Monitor Dashboard</title>
     <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        body { 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            background: #f8fafc; 
-            color: #1e293b;
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: #f0f2f5;
+            color: #1a1a2e;
             display: flex;
             min-height: 100vh;
         }
 
-        /* Sidebar Navigation */
+        /* Sidebar Styling */
         .sidebar {
-            width: 260px;
-            background: #0f172a;
+            width: 240px;
+            background: #1e1b4b;
             color: #fff;
-            padding: 30px 20px;
             display: flex;
             flex-direction: column;
-            gap: 20px;
+            padding: 20px 0;
         }
-
-        .sidebar h2 {
-            font-size: 20px;
-            font-weight: 600;
-            letter-spacing: 0.5px;
+        .sidebar .brand {
+            font-size: 22px;
+            font-weight: bold;
+            padding: 10px 25px;
+            color: #a78bfa;
+            border-bottom: 1px solid #312e81;
             margin-bottom: 20px;
-            padding-left: 10px;
-            color: #38bdf8;
         }
-
         .sidebar a {
-            color: #94a3b8;
+            color: #cbd5e1;
             text-decoration: none;
-            padding: 12px 15px;
-            border-radius: 8px;
+            padding: 14px 25px;
+            display: block;
             font-size: 15px;
-            font-weight: 500;
-            transition: all 0.2s ease;
+            transition: all 0.2s;
         }
-
-        .sidebar a:hover {
-            background: #1e293b;
+        .sidebar a:hover, .sidebar a.active {
+            background: #312e81;
             color: #fff;
+            border-left: 4px solid #8b5cf6;
         }
-
-        .sidebar a.active {
-            background: #0284c7;
-            color: #fff;
-        }
-
-        .sidebar a.logout-btn {
+        .sidebar .logout {
             margin-top: auto;
             color: #f87171;
         }
+        .sidebar .logout:hover { background: #991b1b; color: #fff; }
 
-        .sidebar a.logout-btn:hover {
-            background: #7f1d1d;
-            color: #fca5a5;
-        }
-
-        /* Main Content Panel */
+        /* Main Workspace Content Box */
         .main-content {
             flex: 1;
-            padding: 40px;
-            background: #f1f5f9;
+            display: flex;
+            flex-direction: column;
         }
 
-        .header-bar {
+        /* Top Header Bar */
+        .top-navbar {
+            background: #312e81;
+            color: #fff;
+            padding: 15px 30px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 30px;
-            border-bottom: 1px solid #e2e8f0;
-            padding-bottom: 20px;
         }
+        .top-navbar h2 { font-size: 18px; font-weight: 500; display: flex; align-items: center; gap: 10px; }
+        .user-pill { background: #4338ca; padding: 6px 14px; border-radius: 20px; font-size: 13px; }
 
-        .header-bar h1 {
-            font-size: 28px;
-            font-weight: 600;
-            color: #0f172a;
-        }
-
-        .user-tag {
-            background: #e2e8f0;
-            padding: 6px 16px;
-            border-radius: 20px;
-            font-size: 14px;
-            font-weight: 600;
-            color: #475569;
-        }
-
-        .card-grid {
+        .dashboard-grid {
+            padding: 30px;
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            grid-template-columns: 2fr 1fr;
             gap: 25px;
         }
 
-        .card {
-            background: #ffffff;
-            padding: 25px;
+        /* Camera Stream Container Box */
+        .camera-card {
+            background: #fff;
             border-radius: 12px;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+            padding: 20px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
         }
-
-        .card h3 {
-            font-size: 18px;
-            color: #334155;
-            margin-bottom: 10px;
+        .camera-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
         }
-
-        .card p {
+        .camera-badge { background: #ef4444; color: white; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+        .video-viewport {
+            background: #000;
+            width: 100%;
+            aspect-ratio: 16/9;
+            border-radius: 8px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
             color: #64748b;
-            font-size: 14px;
-            line-height: 1.5;
+            font-weight: 500;
+            overflow: hidden;
         }
+        .video-viewport img { width: 100%; height: 100%; object-fit: cover; }
+
+        /* Metrics Display Panel cards */
+        .metrics-panel { display: flex; flex-direction: column; gap: 20px; }
+        .metric-card {
+            background: #fff;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .metric-card.success-border { border-left: 5px solid #10b981; }
+        .metric-card.failed-border { border-left: 5px solid #ef4444; }
+        .metric-title { font-size: 14px; color: #64748b; font-weight: 600; text-transform: uppercase; }
+        .metric-value { font-size: 28px; font-weight: bold; color: #1e1b4b; }
+
+        /* Real-Time System Log Table Layout */
+        .audit-card {
+            background: #fff;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+            grid-column: span 2;
+        }
+        .audit-card h3 { margin-bottom: 15px; font-size: 16px; color: #1e1b4b; }
+        table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }
+        th { padding: 12px; background: #f8fafc; color: #64748b; font-weight: 600; border-bottom: 1px solid #e2e8f0; }
+        td { padding: 12px; border-bottom: 1px solid #e2e8f0; }
+        
+        .status-pill { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; display: inline-block; }
+        .status-pill.success { background: #d1fae5; color: #065f46; }
+        .status-pill.failed { background: #fee2e2; color: #991b1b; }
     </style>
 </head>
 <body>
 
-    <nav class="sidebar">
-        <h2>Control Panel</h2>
-        <a href="{{ url_for('dashboard') }}" class="active">🏠 Dashboard</a>
-        <a href="{{ url_for('camera') }}">📹 Live Camera Feed</a>
-        <a href="{{ url_for('logout') }}" class="logout-btn">🚪 Log Out</a>
-    </nav>
+    <div class="sidebar">
+        <div class="brand">📷 DCGL System</div>
+        <a href="{{ url_for('dashboard') }}" class="active">📊 Live Monitor</a>
+        <a href="{{ url_for('camera') }}">📹 Camera Management</a>
+        <a href="{{ url_for('logout') }}" class="logout">🚪 Sign Out</a>
+    </div>
 
-    <main class="main-content">
-        <header class="header-bar">
-            <h1>System Status Workspace</h1>
-            <span class="user-tag">👤 User: pup</span>
-        </header>
+    <div class="main-content">
+        <div class="top-navbar">
+            <h2>🖥️ Desktop System Monitor Workspace</h2>
+            <div class="user-pill">🛡️ System Administrator: pup</div>
+        </div>
 
-        <section class="card-grid">
-            <div class="card">
-                <h3>System Authorization</h3>
-                <p>Welcome back! You have successfully established an encrypted session token context with the server instance.</p>
+        <div class="dashboard-grid">
+            <div class="camera-card">
+                <div class="camera-header">
+                    <h3>CCTV 1 — MAIN OVERVIEW</h3>
+                    <span class="camera-badge">● LIVE STREAM</span>
+                </div>
+                <div class="video-viewport">
+                    <img src="https://images.unsplash.com/photo-1557597774-9d273605dfa9?auto=format&fit=crop&w=800&q=80" alt="Live Stream Feed Output Placeholder">
+                </div>
             </div>
-            
-            <div class="card">
-                <h3>Hardware Components</h3>
-                <p>Your streaming server module is online. Select the "Live Camera Feed" module from the menu layout to open your OpenCV stream window.</p>
+
+            <div class="metrics-panel">
+                <div class="metric-card">
+                    <div>
+                        <div class="metric-title">Total Logs Checked</div>
+                        <div class="metric-value">{{ total_logins }}</div>
+                    </div>
+                    <div style="font-size: 32px;">🔑</div>
+                </div>
+
+                <div class="metric-card success-border">
+                    <div>
+                        <div class="metric-title">Successful Accesses</div>
+                        <div class="metric-value" style="color: #10b981;">{{ success_count }}</div>
+                    </div>
+                    <div style="font-size: 32px;">✅</div>
+                </div>
+
+                <div class="metric-card failed-border">
+                    <div>
+                        <div class="metric-title">Unsuccessful Attempts</div>
+                        <div class="metric-value" style="color: #ef4444;">{{ failed_count }}</div>
+                    </div>
+                    <div style="font-size: 32px;">⚠️</div>
+                </div>
             </div>
-        </section>
-    </main>
+
+            <div class="audit-card">
+                <h3>Recent Security & Login Access Audit Trail</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Timestamp (UTC)</th>
+                            <th>Username Tried</th>
+                            <th>Source Address</th>
+                            <th>Security Status Pass</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in recent_logs %}
+                        <tr>
+                            <td>{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                            <td><strong>{{ log.username }}</strong></td>
+                            <td><code>{{ log.ip_address }}</code></td>
+                            <td>
+                                {% if log.status == 'SUCCESS' %}
+                                <span class="status-pill success">AUTHORIZED SUCCESS</span>
+                                {% else %}
+                                <span class="status-pill failed">REJECTED FAILURE</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="4" style="text-align: center; color: #94a3b8; padding: 20px;">No login audit traces documented in record system.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
 
 </body>
 </html>
