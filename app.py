@@ -7,6 +7,13 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'supersecretkey') 
 
+# Fixes session dropped during redirect across various environments
+app.config.update(
+    SESSION_COOKIE_SECURE=False,     # Set to True if you are explicitly using https://
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax'    # Permits cookie delivery on top-level redirects
+)
+
 raw_db_url = os.environ.get('DATABASE_URL')
 
 # Driver Patch for SQLAlchemy 2.0+
@@ -42,12 +49,14 @@ MAX_LOGIN_ATTEMPTS = 3
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    # Initialize the attempt counter in the user's session if it doesn't exist
+    # Clear out any stale session bugs from previous attempts if accessing GET page fresh
+    if request.method == 'GET' and current_user.is_authenticated:
+        return redirect(url_for('dashboard'))
+
     if 'failed_attempts' not in session:
         session['failed_attempts'] = 0
 
     if request.method == 'POST':
-        # Instantly block submission if they are already locked out
         if session['failed_attempts'] >= MAX_LOGIN_ATTEMPTS:
             flash('Too many failed attempts. You are locked out.', 'error')
             return render_template('login.html')
@@ -57,8 +66,13 @@ def login():
         user = User.query.filter_by(username=username).first()
 
         if user and check_password_hash(user.password, password):
-            session['failed_attempts'] = 0  # Reset counter on successful login
-            login_user(user)
+            session['failed_attempts'] = 0  # Reset counter
+            
+            # Explicitly force cookie assignment prior to launching redirect
+            login_user(user, remember=True)
+            session['user_id'] = user.id 
+            session.permanent = True
+            
             return redirect(url_for('dashboard'))
         else:
             session['failed_attempts'] += 1
@@ -75,20 +89,28 @@ def login():
 @login_required
 def logout():
     logout_user()
+    session.pop('user_id', None)
     return redirect(url_for('login'))
 
 @app.route('/dashboard')
 @login_required
 def dashboard():
+    # Secondary redundancy pass: checks traditional session dictionary if Flask-Login dropped tracking
+    if not current_user.is_authenticated and 'user_id' not in session:
+        return redirect(url_for('login'))
     return render_template('dashboard.html')
 
 @app.route('/')
 def index():
+    if current_user.is_authenticated or 'user_id' in session:
+        return redirect(url_for('dashboard'))
     return redirect(url_for('login'))
 
 @app.route('/camera')
 @login_required
 def camera():
+    if not current_user.is_authenticated and 'user_id' not in session:
+        return redirect(url_for('login'))
     return render_template('camera.html')
 
 @app.route('/register', methods=['GET', 'POST'])
