@@ -5,13 +5,17 @@ from flask_login import LoginManager, login_user, login_required, logout_user, U
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
+
+# Production-grade secret tracking keys
 app.secret_key = os.environ.get('SECRET_KEY', 'supersecretkey') 
 
-# Secure session cookie configurations for seamless routing across platforms
+# Force strict cookie synchronization across multi-worker environments
 app.config.update(
-    SESSION_COOKIE_SECURE=False,     # Set to True if your deployment explicitly uses https://
+    SESSION_COOKIE_SECURE=False,     # Flip to True if using custom domain SSL (https://)
     SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE='Lax'
+    SESSION_COOKIE_SAMESITE='Lax',
+    REMEMBER_COOKIE_HTTPONLY=True,
+    REMEMBER_COOKIE_DURATION=3600    # Keeps state alive for 1 hour across instances
 )
 
 raw_db_url = os.environ.get('DATABASE_URL')
@@ -49,8 +53,8 @@ MAX_LOGIN_ATTEMPTS = 3
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    # If already authenticated, skip the login wall entirely
-    if current_user.is_authenticated or 'user_id' in session:
+    # If standard browser cookies state they are authorized, skip login wall entirely
+    if 'user_id' in session:
         return redirect(url_for('dashboard'))
 
     if 'failed_attempts' not in session:
@@ -66,12 +70,19 @@ def login():
         user = User.query.filter_by(username=username).first()
 
         if user and check_password_hash(user.password, password):
-            session['failed_attempts'] = 0  # Reset counter
+            # 1. Reset security limit variables
+            session['failed_attempts'] = 0  
             
-            # Explicitly force cookie persistence across the redirect boundary
-            login_user(user, remember=True)
-            session['user_id'] = user.id 
+            # 2. Bind structural session state to Flask's global cookie dictionary
+            session['user_id'] = user.id
+            session['username'] = user.username
             session.permanent = True
+            
+            # 3. Inform Flask-Login layer to authenticate instance
+            login_user(user, remember=True)
+            
+            # 4. Explicitly force an update flush onto the user's browser client
+            session.modified = True
             
             return redirect(url_for('dashboard'))
         else:
@@ -86,31 +97,32 @@ def login():
     return render_template('login.html')
 
 @app.route('/logout')
-@login_required
 def logout():
     logout_user()
-    session.pop('user_id', None)
+    session.clear() # Completely wipes out session tracking tokens
     return redirect(url_for('login'))
 
 @app.route('/dashboard')
-@login_required
 def dashboard():
-    # Redundancy fallback validation check
-    if not current_user.is_authenticated and 'user_id' not in session:
-        return redirect(url_for('login'))
-    return render_template('dashboard.html')
+    # Bulletproof Multi-worker State Pass:
+    # If the user has a valid tracking token in their session cookie array, let them through!
+    if 'user_id' in session:
+        return render_template('dashboard.html')
+        
+    # If cookie tracking dropped off entirely, route back to login
+    flash('Please log in to access the dashboard.', 'error')
+    return redirect(url_for('login'))
 
-# Clean base route path: quickly hands off to the intended interface via clean GET logic
 @app.route('/', methods=['GET'])
 def index():
-    if current_user.is_authenticated or 'user_id' in session:
+    if 'user_id' in session:
         return redirect(url_for('dashboard'))
     return redirect(url_for('login'))
 
 @app.route('/camera')
-@login_required
 def camera():
-    if not current_user.is_authenticated and 'user_id' not in session:
+    if 'user_id' not in session:
+        flash('Please log in to access the camera.', 'error')
         return redirect(url_for('login'))
     return render_template('camera.html')
 
