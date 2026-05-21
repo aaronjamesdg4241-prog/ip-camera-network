@@ -2,8 +2,9 @@ import os
 from datetime import datetime, timedelta
 from flask import Flask, render_template, redirect, url_for, request, flash, session
 from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager, login_user, login_required, logout_user, UserMixin, current_user
+from flask_login import LoginManager, login_user, login_required, logout_user, UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
+from sqlalchemy import text
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'supersecretkey') 
@@ -30,14 +31,12 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
-# Relational Tables with added persistent security structures
+# Relational Tables
 class User(UserMixin, db.Model):
     __tablename__ = 'account_user'
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(150), unique=True, nullable=False)
     password = db.Column(db.Text, nullable=False)
-    
-    # Core additions for persistent, cookie-immune lockout policies
     failed_login_attempts = db.Column(db.Integer, default=0, nullable=False)
     lockout_until = db.Column(db.DateTime, nullable=True)
 
@@ -53,8 +52,29 @@ class LoginAudit(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
+# Automated Schema Patching Routine Engine
 with app.app_context():
     db.create_all()
+    
+    # Safely migrate existing tables if columns are missing
+    try:
+        bind_engine = db.session.get_bind()
+        with bind_engine.connect() as conn:
+            # Check for the missing lockout column structure
+            check_query = text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name='account_user' AND column_name='failed_login_attempts';
+            """)
+            result = conn.execute(check_query).fetchone()
+            
+            # If columns are completely missing, patch the live production table schemas
+            if not result:
+                conn.execute(text("ALTER TABLE account_user ADD COLUMN failed_login_attempts INTEGER DEFAULT 0 NOT NULL;"))
+                conn.execute(text("ALTER TABLE account_user ADD COLUMN lockout_until TIMESTAMP WITHOUT TIME ZONE;"))
+                conn.commit()
+    except Exception as e:
+        print(f"Schema engine non-critical pass or sqlite environment active: {e}")
 
 MAX_LOGIN_ATTEMPTS = 3
 LOCKOUT_DURATION_HOURS = 1
@@ -72,12 +92,10 @@ def login():
         current_time = datetime.utcnow()
 
         if user:
-            # Check if user is currently locked down via database records
             if user.lockout_until and current_time < user.lockout_until:
                 time_remaining = user.lockout_until - current_time
                 minutes_left = int(time_remaining.total_seconds() // 60) + 1
                 
-                # Audit the locked block action attempt
                 audit_entry = LoginAudit(username=username, status='LOCKED', ip_address=user_ip)
                 db.session.add(audit_entry)
                 db.session.commit()
@@ -85,9 +103,7 @@ def login():
                 flash(f'Account is locked due to multiple failures. Try again in {minutes_left} minutes.', 'error')
                 return render_template('login.html')
 
-        # Authentication check
         if user and check_password_hash(user.password, password):
-            # Reset database tracking fields on authorization success
             user.failed_login_attempts = 0
             user.lockout_until = None
             
@@ -102,7 +118,6 @@ def login():
             session.modified = True
             return redirect(url_for('dashboard'))
         else:
-            # Handle failure analytics on registration matching target strings
             audit_entry = LoginAudit(username=username, status='FAILED', ip_address=user_ip)
             
             if user:
@@ -117,7 +132,6 @@ def login():
                     db.session.commit()
                     flash(f'Invalid credentials. {remaining_attempts} attempts remaining.', 'error')
             else:
-                # Still commit the audit log if the username doesn't exist
                 db.session.commit()
                 flash('Invalid credentials.', 'error')
                 
@@ -145,10 +159,8 @@ def dashboard():
     success_count = LoginAudit.query.filter_by(status='SUCCESS').count()
     failed_count = LoginAudit.query.filter_by(status='FAILED').count()
     
-    # Blocked accounts active metric check count
     blocked_count = User.query.filter(User.lockout_until > datetime.utcnow()).count()
     
-    # 24-Hour chronological tracking pull
     time_threshold = datetime.utcnow() - timedelta(hours=24)
     raw_logs = LoginAudit.query.filter(LoginAudit.timestamp >= time_threshold)\
                                .order_by(LoginAudit.timestamp.desc()).all()
