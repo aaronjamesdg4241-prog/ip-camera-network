@@ -74,15 +74,21 @@ MAX_LOGIN_ATTEMPTS = 3
 LOCKOUT_DURATION_HOURS = 1
 
 # ==========================================
-# IP CAMERA GENERATOR STREAM ENGINE
+# UNIVERSAL VIDEO GENERATOR STREAM ENGINE
 # ==========================================
 def generate_camera_frames():
     """
-    Connects to an external network endpoint hosted by a phone or tablet IP camera application,
-    captures frames, encodes them to JPEG data payloads, and yields them sequentially.
+    Connects to either an external network tunnel (ngrok/RTSP/Tablet app) 
+    or defaults back to index 0 for a directly plugged-in USB desktop webcam.
     """
-    mobile_stream_url = os.environ.get('MOBILE_CAMERA_URL', 'http://192.168.1.50:8080/video')
-    camera = cv2.VideoCapture(mobile_stream_url)
+    mobile_stream_url = os.environ.get('MOBILE_CAMERA_URL', '')
+    
+    if mobile_stream_url:
+        # Configuration A: Cloud Deployment / Expose Network Stream Target
+        camera = cv2.VideoCapture(mobile_stream_url)
+    else:
+        # Configuration B: Local Machine Development USB Webcam Target
+        camera = cv2.VideoCapture(0)
     
     while True:
         success, frame = camera.read()
@@ -94,7 +100,7 @@ def generate_camera_frames():
                 continue
             frame_bytes = buffer.tobytes()
             
-            # FIXED: Uses clean token formatting blocks to eliminate multi-line literal truncation
+            # Clean streaming chunk formatting to prevent string evaluation truncation
             yield (
                 b'--frame\r\n'
                 b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n'
@@ -164,7 +170,6 @@ def login():
             db.session.add(audit_entry)
             db.session.commit()
 
-            # Verify IP failure totals to calculate dynamic UI warnings
             fail_count = LoginAudit.query.filter(
                 LoginAudit.ip_address == user_ip,
                 LoginAudit.status == 'FAILED',
