@@ -1,165 +1,158 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Login</title>
-<style>
-  * {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-  }
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
 
-  body { 
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); 
-    display: flex; 
-    justify-content: center; 
-    align-items: center; 
-    height: 100vh; 
-  }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background: #f8fafc; 
+            color: #1e293b;
+            display: flex;
+            min-height: 100vh;
+        }
 
-  .login-container {
-    background: #ffffff; 
-    padding: 40px; 
-    border-radius: 12px; 
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05); 
-    width: 360px; 
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-  }
+        /* Sidebar Navigation */
+        .sidebar {
+            width: 260px;
+            background: #0f172a;
+            color: #fff;
+            padding: 30px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
 
-  .login-container:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
-  }
+        .sidebar h2 {
+            font-size: 20px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            margin-bottom: 20px;
+            padding-left: 10px;
+            color: #38bdf8;
+        }
 
-  h2 {
-    color: #2c3e50;
-    font-size: 28px;
-    font-weight: 600;
-    margin-bottom: 25px;
-    text-align: center;
-  }
+        .sidebar a {
+            color: #94a3b8;
+            text-decoration: none;
+            padding: 12px 15px;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
 
-  .input-group {
-    margin-bottom: 18px;
-  }
+        .sidebar a:hover {
+            background: #1e293b;
+            color: #fff;
+        }
 
-  input { 
-    display: block; 
-    width: 100%; 
-    padding: 12px 16px; 
-    font-size: 14px;
-    background: #f8f9fa;
-    color: #2c3e50;
-    border: 1px solid #e2e8f0; 
-    border-radius: 6px; 
-    outline: none;
-    transition: all 0.2s ease;
-  }
+        .sidebar a.active {
+            background: #0284c7;
+            color: #fff;
+        }
 
-  input:focus {
-    background: #ffffff;
-    border-color: #3498db;
-    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.15);
-  }
+        .sidebar a.logout-btn {
+            margin-top: auto;
+            color: #f87171;
+        }
 
-  input::placeholder {
-    color: #94a3b8;
-  }
+        .sidebar a.logout-btn:hover {
+            background: #7f1d1d;
+            color: #fca5a5;
+        }
 
-  button { 
-    width: 100%; 
-    padding: 12px; 
-    background: #3498db; 
-    color: #fff; 
-    border: none; 
-    border-radius: 6px; 
-    font-size: 15px;
-    font-weight: 600;
-    cursor: pointer; 
-    transition: background 0.2s ease;
-    margin-top: 5px;
-  }
+        /* Main Content Panel */
+        .main-content {
+            flex: 1;
+            padding: 40px;
+            background: #f1f5f9;
+        }
 
-  button:hover { 
-    background: #2980b9; 
-  }
+        .header-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 20px;
+        }
 
-  button:active {
-    transform: scale(0.99);
-  }
+        .header-bar h1 {
+            font-size: 28px;
+            font-weight: 600;
+            color: #0f172a;
+        }
 
-  .flash-messages { 
-    background: #fdf2f2;
-    color: #de3e3e; 
-    border: 1px solid #f8b4b4;
-    padding: 10px;
-    border-radius: 6px;
-    margin-bottom: 20px; 
-    font-size: 13px; 
-    text-align: center; 
-  }
-  
-  .flash-messages p {
-    margin-bottom: 4px;
-  }
-  .flash-messages p:last-child {
-    margin-bottom: 0;
-  }
+        .user-tag {
+            background: #e2e8f0;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #475569;
+        }
 
-  .footer-text {
-    font-size: 13px; 
-    color: #64748b;
-    text-align: center; 
-    margin-top: 25px;
-  }
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 25px;
+        }
 
-  .footer-text a {
-    color: #3498db;
-    text-decoration: none;
-    font-weight: 600;
-    transition: color 0.2s ease;
-  }
+        .card {
+            background: #ffffff;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+        }
 
-  .footer-text a:hover {
-    color: #1f618d;
-    text-decoration: underline;
-  }
-</style>
+        .card h3 {
+            font-size: 18px;
+            color: #334155;
+            margin-bottom: 10px;
+        }
+
+        .card p {
+            color: #64748b;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+    </style>
 </head>
 <body>
 
-<div class="login-container">
-  <form method="POST" action="{{ url_for('login') }}">
-    <h2>Welcome Back</h2>
-    
-    {% with messages = get_flashed_messages() %}
-      {% if messages %}
-        <div class="flash-messages">
-          {% for message in messages %}
-            <p>{{ message }}</p>
-          {% endfor %}
-        </div>
-      {% endif %}
-    {% endwith %}
+    <nav class="sidebar">
+        <h2>Control Panel</h2>
+        <a href="{{ url_for('dashboard') }}" class="active">🏠 Dashboard</a>
+        <a href="{{ url_for('camera') }}">📹 Live Camera Feed</a>
+        <a href="{{ url_for('logout') }}" class="logout-btn">🚪 Log Out</a>
+    </nav>
 
-    <div class="input-group">
-      <input type="text" name="username" placeholder="Username" required />
-    </div>
-    
-    <div class="input-group">
-      <input type="password" name="password" placeholder="Password" required />
-    </div>
+    <main class="main-content">
+        <header class="header-bar">
+            <h1>System Status Workspace</h1>
+            <span class="user-tag">👤 User: pup</span>
+        </header>
 
-    <button type="submit">Login</button>
-    
-    <p class="footer-text">
-      Don't have an account? <a href="{{ url_for('register') }}">Register here</a>
-    </p>
-  </form>
-</div>
+        <section class="card-grid">
+            <div class="card">
+                <h3>System Authorization</h3>
+                <p>Welcome back! You have successfully established an encrypted session token context with the server instance.</p>
+            </div>
+            
+            <div class="card">
+                <h3>Hardware Components</h3>
+                <p>Your streaming server module is online. Select the "Live Camera Feed" module from the menu layout to open your OpenCV stream window.</p>
+            </div>
+        </section>
+    </main>
 
 </body>
 </html>
