@@ -7,11 +7,11 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'supersecretkey') 
 
-# Fixes session dropped during redirect across various environments
+# Secure session cookie configurations for seamless routing across platforms
 app.config.update(
-    SESSION_COOKIE_SECURE=False,     # Set to True if you are explicitly using https://
+    SESSION_COOKIE_SECURE=False,     # Set to True if your deployment explicitly uses https://
     SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE='Lax'    # Permits cookie delivery on top-level redirects
+    SESSION_COOKIE_SAMESITE='Lax'
 )
 
 raw_db_url = os.environ.get('DATABASE_URL')
@@ -49,7 +49,7 @@ MAX_LOGIN_ATTEMPTS = 3
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    # If already authenticated, bypass login completely
+    # If already authenticated, skip the login wall entirely
     if current_user.is_authenticated or 'user_id' in session:
         return redirect(url_for('dashboard'))
 
@@ -68,7 +68,7 @@ def login():
         if user and check_password_hash(user.password, password):
             session['failed_attempts'] = 0  # Reset counter
             
-            # Force cookie assignment prior to launching redirect
+            # Explicitly force cookie persistence across the redirect boundary
             login_user(user, remember=True)
             session['user_id'] = user.id 
             session.permanent = True
@@ -95,18 +95,14 @@ def logout():
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    # Secondary redundancy pass: checks traditional session dictionary if Flask-Login dropped tracking
+    # Redundancy fallback validation check
     if not current_user.is_authenticated and 'user_id' not in session:
         return redirect(url_for('login'))
     return render_template('dashboard.html')
 
-# FIXED: Added methods to handle initial landing and potential raw submissions
-@app.route('/', methods=['GET', 'POST'])
+# Clean base route path: quickly hands off to the intended interface via clean GET logic
+@app.route('/', methods=['GET'])
 def index():
-    if request.method == 'POST':
-        # If a POST hits root, seamlessly forward it to the login processing block
-        return redirect(url_for('login'), code=307) 
-        
     if current_user.is_authenticated or 'user_id' in session:
         return redirect(url_for('dashboard'))
     return redirect(url_for('login'))
