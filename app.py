@@ -51,26 +51,36 @@ class LoginAudit(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
+# ==========================================
+# APPLICATION CONTEXT INITIALIZATION & RESET
+# ==========================================
 with app.app_context():
     db.create_all()
+    
+    # TEMPORARY OPERATIONS RESET BLOCK: Wipes out the ledger tracking 
+    # records to lift active IP bans every time the container boots.
+    try:
+        db.session.query(LoginAudit).delete()
+        db.session.commit()
+        print("\n" + "="*60)
+        print("DATABASE MAINTENANCE: Active login ban lists have been cleared!")
+        print("="*60 + "\n")
+    except Exception as e:
+        db.session.rollback()
+        print(f"Failed to clear audit table logs on boot: {e}")
 
 MAX_LOGIN_ATTEMPTS = 3
 LOCKOUT_DURATION_HOURS = 1
 
 # ==========================================
-# METHOD 2: IP CAMERA GENERATOR FUNCTION
+# IP CAMERA GENERATOR STREAM ENGINE
 # ==========================================
 def generate_camera_frames():
     """
     Connects to an external network endpoint hosted by a phone or tablet IP camera application,
     captures frames, encodes them to JPEG data payloads, and yields them sequentially.
     """
-    # Replace this string with the direct HTTP or RTSP stream link provided by your mobile app.
-    # Common examples: 
-    # - Android (IP Webcam): "http://192.168.1.50:8080/video"
-    # - iOS / RTSP feeds: "rtsp://192.168.1.50:8554/live"
-    mobile_stream_url = os.environ.get('MOBILE_CAMERA_URL', 'http://192.168.100.96:8080/video')
-    
+    mobile_stream_url = os.environ.get('MOBILE_CAMERA_URL', 'http://192.168.1.50:8080/video')
     camera = cv2.VideoCapture(mobile_stream_url)
     
     while True:
@@ -78,185 +88,9 @@ def generate_camera_frames():
         if not success:
             break
         else:
-            # Compress the frame image to optimize transit size over network ports
             ret, buffer = cv2.imencode('.jpg', frame)
             if not ret:
                 continue
             frame_bytes = buffer.tobytes()
             
-            # Use multipart encoding headers so the client-side browser updates continuously
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-
-# Stream endpoint feeding image buffers to the layout template view
-@app.route('/video_feed')
-def video_feed():
-    if 'user_id' not in session:
-        return "Unauthorized", 401
-    return Response(generate_camera_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
-
-
-# ==========================================
-# AUTHENTICATION ROUTING AND CORE SYSTEM LOGIC
-# ==========================================
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if 'user_id' in session:
-        return redirect(url_for('dashboard'))
-
-    if request.method == 'POST':
-        username = request.form['username'].strip()
-        password = request.form['password']
-        user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-        current_time = datetime.utcnow()
-        time_window = current_time - timedelta(hours=LOCKOUT_DURATION_HOURS)
-
-        # 1. EVALUATE IP-BASED LOCKOUT STATUS
-        recent_ip_failures = LoginAudit.query.filter(
-            LoginAudit.ip_address == user_ip,
-            LoginAudit.status == 'FAILED',
-            LoginAudit.timestamp >= time_window
-        ).order_by(LoginAudit.timestamp.desc()).all()
-
-        if len(recent_ip_failures) >= MAX_LOGIN_ATTEMPTS:
-            last_failure_time = recent_ip_failures[0].timestamp
-            lockout_expiration = last_failure_time + timedelta(hours=LOCKOUT_DURATION_HOURS)
-
-            if current_time < lockout_expiration:
-                time_remaining = lockout_expiration - current_time
-                minutes_left = int(time_remaining.total_seconds() // 60) + 1
-                
-                audit_entry = LoginAudit(username=username, status='LOCKED', ip_address=user_ip)
-                db.session.add(audit_entry)
-                db.session.commit()
-                
-                flash(f'Your IP address is temporarily blocked due to multiple failed attempts. Try again in {minutes_left} minutes.', 'error')
-                return render_template('login.html')
-
-        # 2. EVALUATE AUTHENTICATION
-        user = User.query.filter_by(username=username).first()
-
-        if user and check_password_hash(user.password, password):
-            audit_entry = LoginAudit(username=username, status='SUCCESS', ip_address=user_ip)
-            db.session.add(audit_entry)
-            db.session.commit()
-
-            session['user_id'] = user.id
-            session['username'] = user.username
-            session.permanent = True
-            login_user(user, remember=True)
-            session.modified = True
-            return redirect(url_for('dashboard'))
-        
-        else:
-            audit_entry = LoginAudit(username=username, status='FAILED', ip_address=user_ip)
-            db.session.add(audit_entry)
-            db.session.commit()
-
-            fail_count = LoginAudit.query.filter(
-                LoginAudit.ip_address == user_ip,
-                LoginAudit.status == 'FAILED',
-                LoginAudit.timestamp >= time_window
-            ).count()
-
-            remaining_attempts = MAX_LOGIN_ATTEMPTS - fail_count
-            
-            if remaining_attempts <= 0:
-                flash(f'Too many failed attempts. Access from this IP is locked for {LOCKOUT_DURATION_HOURS} hour.', 'error')
-            else:
-                flash(f'Invalid credentials. {remaining_attempts} attempts remaining for this IP.', 'error')
-                
-    return render_template('login.html')
-
-@app.route('/logout')
-def logout():
-    try:
-        logout_user()
-    except Exception:
-        pass  
-    session.clear()
-    session.modified = True
-    response = redirect(url_for('login'))
-    response.delete_cookie('session')  
-    return response
-
-@app.route('/dashboard')
-def dashboard():
-    if 'user_id' not in session:
-        flash('Please log in to access the dashboard.', 'error')
-        return redirect(url_for('login'))
-        
-    total_logins = LoginAudit.query.count()
-    success_count = LoginAudit.query.filter_by(status='SUCCESS').count()
-    failed_count = LoginAudit.query.filter_by(status='FAILED').count()
-    
-    time_window = datetime.utcnow() - timedelta(hours=LOCKOUT_DURATION_HOURS)
-    all_recent_fails = LoginAudit.query.filter(
-        LoginAudit.status == 'FAILED',
-        LoginAudit.timestamp >= time_window
-    ).all()
-    
-    ip_fail_map = {}
-    for f in all_recent_fails:
-        if f.ip_address:
-            ip_fail_map[f.ip_address] = ip_fail_map.get(f.ip_address, 0) + 1
-    
-    blocked_count = sum(1 for ip, count in ip_fail_map.items() if count >= MAX_LOGIN_ATTEMPTS)
-    
-    time_threshold = datetime.utcnow() - timedelta(hours=24)
-    raw_logs = LoginAudit.query.filter(LoginAudit.timestamp >= time_threshold)\
-                               .order_by(LoginAudit.timestamp.desc()).all()
-    
-    processed_logs = []
-    for log in raw_logs:
-        if log.status == 'SUCCESS':
-            processed_logs.append({
-                'timestamp': log.timestamp,
-                'username': 'Successful',
-                'ip_address': 'X.X.X.X',
-                'status': log.status
-            })
-        else:
-            processed_logs.append({
-                'timestamp': log.timestamp,
-                'username': log.username,
-                'ip_address': log.ip_address,
-                'status': log.status
-            })
-
-    return render_template(
-        'dashboard.html', 
-        total_logins=total_logins,
-        success_count=success_count,
-        failed_count=failed_count,
-        blocked_count=blocked_count,
-        recent_logs=processed_logs
-    )
-
-@app.route('/')
-def index():
-    if 'user_id' in session:
-        return redirect(url_for('dashboard'))
-    return redirect(url_for('login'))
-
-@app.route('/register', methods=['GET', 'POST'])
-def register():
-    if request.method == 'POST':
-        username = request.form['username'].strip()
-        password = request.form['password']
-        existing_user = User.query.filter_by(username=username).first()
-        if existing_user:
-            flash('Username already exists', 'error')
-            return redirect(url_for('register'))
-        
-        hashed_password = generate_password_hash(password)
-        new_user = User(username=username, password=hashed_password)
-        db.session.add(new_user)
-        db.session.commit()
-        flash('Registration successful! Please log in.', 'success')
-        return redirect(url_for('login'))
-    return render_template('register.html')
-
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port)
+            yield (b'--frame\
