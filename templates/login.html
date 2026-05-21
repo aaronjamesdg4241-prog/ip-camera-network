@@ -1,165 +1,107 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Login</title>
-<style>
-  * {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-  }
-
-  body { 
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); 
-    display: flex; 
-    justify-content: center; 
-    align-items: center; 
-    height: 100vh; 
-  }
-
-  .login-container {
-    background: #ffffff; 
-    padding: 40px; 
-    border-radius: 12px; 
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05); 
-    width: 360px; 
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-  }
-
-  .login-container:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
-  }
-
-  h2 {
-    color: #2c3e50;
-    font-size: 28px;
-    font-weight: 600;
-    margin-bottom: 25px;
-    text-align: center;
-  }
-
-  .input-group {
-    margin-bottom: 18px;
-  }
-
-  input { 
-    display: block; 
-    width: 100%; 
-    padding: 12px 16px; 
-    font-size: 14px;
-    background: #f8f9fa;
-    color: #2c3e50;
-    border: 1px solid #e2e8f0; 
-    border-radius: 6px; 
-    outline: none;
-    transition: all 0.2s ease;
-  }
-
-  input:focus {
-    background: #ffffff;
-    border-color: #3498db;
-    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.15);
-  }
-
-  input::placeholder {
-    color: #94a3b8;
-  }
-
-  button { 
-    width: 100%; 
-    padding: 12px; 
-    background: #3498db; 
-    color: #fff; 
-    border: none; 
-    border-radius: 6px; 
-    font-size: 15px;
-    font-weight: 600;
-    cursor: pointer; 
-    transition: background 0.2s ease;
-    margin-top: 5px;
-  }
-
-  button:hover { 
-    background: #2980b9; 
-  }
-
-  button:active {
-    transform: scale(0.99);
-  }
-
-  .flash-messages { 
-    background: #fdf2f2;
-    color: #de3e3e; 
-    border: 1px solid #f8b4b4;
-    padding: 10px;
-    border-radius: 6px;
-    margin-bottom: 20px; 
-    font-size: 13px; 
-    text-align: center; 
-  }
-  
-  .flash-messages p {
-    margin-bottom: 4px;
-  }
-  .flash-messages p:last-child {
-    margin-bottom: 0;
-  }
-
-  .footer-text {
-    font-size: 13px; 
-    color: #64748b;
-    text-align: center; 
-    margin-top: 25px;
-  }
-
-  .footer-text a {
-    color: #3498db;
-    text-decoration: none;
-    font-weight: 600;
-    transition: color 0.2s ease;
-  }
-
-  .footer-text a:hover {
-    color: #1f618d;
-    text-decoration: underline;
-  }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Authentication</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: #0f172a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            color: #fff;
+        }
+        .login-card {
+            background: #1e293b;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3);
+            width: 100%;
+            max-width: 400px;
+        }
+        h2 { margin-bottom: 24px; font-weight: 600; text-align: center; color: #38bdf8; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-size: 14px; color: #94a3b8; }
+        input {
+            width: 100%;
+            padding: 12px;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            color: #fff;
+            font-size: 15px;
+            box-sizing: border-box;
+        }
+        input:focus { border-color: #38bdf8; outline: none; }
+        button {
+            width: 100%;
+            padding: 12px;
+            background: #0284c7;
+            border: none;
+            border-radius: 6px;
+            color: #fff;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: background 0.2s;
+        }
+        button:hover { background: #0369a1; }
+        .flash-messages {
+            background: #fee2e2;
+            color: #991b1b;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            font-weight: 500;
+            border-left: 4px solid #ef4444;
+        }
+        .footer-text {
+            text-align: center;
+            margin-top: 24px;
+            font-size: 14px;
+            color: #64748b;
+        }
+        .footer-text a { color: #38bdf8; text-decoration: none; }
+        .footer-text a:hover { text-decoration: underline; }
+    </style>
 </head>
 <body>
 
-<div class="login-container">
-  <form method="POST">
-    <h2>Welcome Back</h2>
-    
-    {% with messages = get_flashed_messages() %}
-      {% if messages %}
-        <div class="flash-messages">
-          {% for message in messages %}
-            <p>{{ message }}</p>
-          {% endfor %}
+    <div class="login-card">
+        <h2>📷 Security Access</h2>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="flash-messages">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <form action="{{ url_for('login') }}" method="POST">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" required autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            <button type="submit">Authenticate Session</button>
+        </form>
+
+        <div class="footer-text">
+            Don't have an account? <a href="/register">Register here</a>
         </div>
-      {% endif %}
-    {% endwith %}
-
-    <div class="input-group">
-      <input type="text" name="username" placeholder="Username" required />
     </div>
-    
-    <div class="input-group">
-      <input type="password" name="password" placeholder="Password" required />
-    </div>
-
-    <button type="submit">Login</button>
-    
-    <p class="footer-text">
-      Don't have an account? <a href="{{ url_for('register') }}">Register here</a>
-    </p>
-  </form>
-</div>
 
 </body>
 </html>
