@@ -49,8 +49,8 @@ MAX_LOGIN_ATTEMPTS = 3
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    # Clear out any stale session bugs from previous attempts if accessing GET page fresh
-    if request.method == 'GET' and current_user.is_authenticated:
+    # If already authenticated, bypass login completely
+    if current_user.is_authenticated or 'user_id' in session:
         return redirect(url_for('dashboard'))
 
     if 'failed_attempts' not in session:
@@ -68,7 +68,7 @@ def login():
         if user and check_password_hash(user.password, password):
             session['failed_attempts'] = 0  # Reset counter
             
-            # Explicitly force cookie assignment prior to launching redirect
+            # Force cookie assignment prior to launching redirect
             login_user(user, remember=True)
             session['user_id'] = user.id 
             session.permanent = True
@@ -100,8 +100,13 @@ def dashboard():
         return redirect(url_for('login'))
     return render_template('dashboard.html')
 
-@app.route('/')
+# FIXED: Added methods to handle initial landing and potential raw submissions
+@app.route('/', methods=['GET', 'POST'])
 def index():
+    if request.method == 'POST':
+        # If a POST hits root, seamlessly forward it to the login processing block
+        return redirect(url_for('login'), code=307) 
+        
     if current_user.is_authenticated or 'user_id' in session:
         return redirect(url_for('dashboard'))
     return redirect(url_for('login'))
