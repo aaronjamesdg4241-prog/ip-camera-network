@@ -8,7 +8,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'supersecretkey') 
 
-# Strict multi-worker session configuration
+# Multi-worker session cookie tracking configurations
 app.config.update(
     SESSION_COOKIE_SECURE=False,     
     SESSION_COOKIE_HTTPONLY=True,
@@ -30,19 +30,23 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
-# Relational Tables
+# Relational Tables with added persistent security structures
 class User(UserMixin, db.Model):
     __tablename__ = 'account_user'
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(150), unique=True, nullable=False)
     password = db.Column(db.Text, nullable=False)
+    
+    # Core additions for persistent, cookie-immune lockout policies
+    failed_login_attempts = db.Column(db.Integer, default=0, nullable=False)
+    lockout_until = db.Column(db.DateTime, nullable=True)
 
 class LoginAudit(db.Model):
     __tablename__ = 'login_audit'
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(150), nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-    status = db.Column(db.String(50), nullable=False) # 'SUCCESS' or 'FAILED'
+    status = db.Column(db.String(50), nullable=False) # 'SUCCESS', 'FAILED', or 'LOCKED'
     ip_address = db.Column(db.String(50))
 
 @login_manager.user_loader
@@ -53,50 +57,69 @@ with app.app_context():
     db.create_all()
 
 MAX_LOGIN_ATTEMPTS = 3
+LOCKOUT_DURATION_HOURS = 1
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if 'user_id' in session:
         return redirect(url_for('dashboard'))
 
-    if 'failed_attempts' not in session:
-        session['failed_attempts'] = 0
-
     if request.method == 'POST':
-        if session['failed_attempts'] >= MAX_LOGIN_ATTEMPTS:
-            flash('Too many failed attempts. You are locked out.', 'error')
-            return render_template('login.html')
-        
         username = request.form['username']
         password = request.form['password']
         user = User.query.filter_by(username=username).first()
         user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        current_time = datetime.utcnow()
 
+        if user:
+            # Check if user is currently locked down via database records
+            if user.lockout_until and current_time < user.lockout_until:
+                time_remaining = user.lockout_until - current_time
+                minutes_left = int(time_remaining.total_seconds() // 60) + 1
+                
+                # Audit the locked block action attempt
+                audit_entry = LoginAudit(username=username, status='LOCKED', ip_address=user_ip)
+                db.session.add(audit_entry)
+                db.session.commit()
+                
+                flash(f'Account is locked due to multiple failures. Try again in {minutes_left} minutes.', 'error')
+                return render_template('login.html')
+
+        # Authentication check
         if user and check_password_hash(user.password, password):
-            session['failed_attempts'] = 0  
-            session['user_id'] = user.id
-            session['username'] = user.username
-            session.permanent = True
+            # Reset database tracking fields on authorization success
+            user.failed_login_attempts = 0
+            user.lockout_until = None
             
             audit_entry = LoginAudit(username=username, status='SUCCESS', ip_address=user_ip)
             db.session.add(audit_entry)
             db.session.commit()
 
+            session['user_id'] = user.id
+            session['username'] = user.username
+            session.permanent = True
             login_user(user, remember=True)
             session.modified = True
             return redirect(url_for('dashboard'))
         else:
-            session['failed_attempts'] += 1
-            remaining_attempts = MAX_LOGIN_ATTEMPTS - session['failed_attempts']
-            
+            # Handle failure analytics on registration matching target strings
             audit_entry = LoginAudit(username=username, status='FAILED', ip_address=user_ip)
-            db.session.add(audit_entry)
-            db.session.commit()
-
-            if remaining_attempts > 0:
-                flash(f'Invalid credentials. {remaining_attempts} attempts remaining.', 'error')
+            
+            if user:
+                user.failed_login_attempts += 1
+                remaining_attempts = MAX_LOGIN_ATTEMPTS - user.failed_login_attempts
+                
+                if user.failed_login_attempts >= MAX_LOGIN_ATTEMPTS:
+                    user.lockout_until = current_time + timedelta(hours=LOCKOUT_DURATION_HOURS)
+                    db.session.commit()
+                    flash(f'Too many failed attempts. Your account is locked for {LOCKOUT_DURATION_HOURS} hour.', 'error')
+                else:
+                    db.session.commit()
+                    flash(f'Invalid credentials. {remaining_attempts} attempts remaining.', 'error')
             else:
-                flash('Too many failed attempts. You are locked out.', 'error')
+                # Still commit the audit log if the username doesn't exist
+                db.session.commit()
+                flash('Invalid credentials.', 'error')
                 
     return render_template('login.html')
 
@@ -106,10 +129,8 @@ def logout():
         logout_user()
     except Exception:
         pass  
-
     session.clear()
     session.modified = True
-
     response = redirect(url_for('login'))
     response.delete_cookie('session')  
     return response
@@ -124,25 +145,20 @@ def dashboard():
     success_count = LoginAudit.query.filter_by(status='SUCCESS').count()
     failed_count = LoginAudit.query.filter_by(status='FAILED').count()
     
-    # Blocked accounts metric logic:
-    # Aggregates consecutive failed tracking intervals from the audit db
-    blocked_count = db.session.query(LoginAudit.username).\
-        filter(LoginAudit.status == 'FAILED').\
-        group_by(LoginAudit.username).\
-        having(db.func.count(LoginAudit.id) >= MAX_LOGIN_ATTEMPTS).count()
+    # Blocked accounts active metric check count
+    blocked_count = User.query.filter(User.lockout_until > datetime.utcnow()).count()
     
-    # Calculate rolling 24-hour cutoff
+    # 24-Hour chronological tracking pull
     time_threshold = datetime.utcnow() - timedelta(hours=24)
     raw_logs = LoginAudit.query.filter(LoginAudit.timestamp >= time_threshold)\
                                .order_by(LoginAudit.timestamp.desc()).all()
     
-    # Data-Scrubbing Optimization Filter
     processed_logs = []
     for log in raw_logs:
         if log.status == 'SUCCESS':
             processed_logs.append({
                 'timestamp': log.timestamp,
-                'username': 'Successful',  # Updated censorship token name
+                'username': 'Successful',
                 'ip_address': 'X.X.X.X',
                 'status': log.status
             })
@@ -159,7 +175,7 @@ def dashboard():
         total_logins=total_logins,
         success_count=success_count,
         failed_count=failed_count,
-        blocked_count=blocked_count, # Passed to the UI layout
+        blocked_count=blocked_count,
         recent_logs=processed_logs
     )
 
