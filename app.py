@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, render_template, redirect, url_for, request, flash, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, login_user, login_required, logout_user, UserMixin, current_user
@@ -8,6 +8,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'supersecretkey') 
 
+# Strict multi-worker session configuration
 app.config.update(
     SESSION_COOKIE_SECURE=False,     
     SESSION_COOKIE_HTTPONLY=True,
@@ -29,7 +30,7 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
-# Models
+# Relational Tables
 class User(UserMixin, db.Model):
     __tablename__ = 'account_user'
     id = db.Column(db.Integer, primary_key=True)
@@ -69,7 +70,6 @@ def login():
         username = request.form['username']
         password = request.form['password']
         user = User.query.filter_by(username=username).first()
-
         user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
 
         if user and check_password_hash(user.password, password):
@@ -120,30 +120,32 @@ def dashboard():
         flash('Please log in to access the dashboard.', 'error')
         return redirect(url_for('login'))
         
-    # Gather database counter aggregates 
     total_logins = LoginAudit.query.count()
     success_count = LoginAudit.query.filter_by(status='SUCCESS').count()
     failed_count = LoginAudit.query.filter_by(status='FAILED').count()
     
-    # Retrieve recent login tracking entries
-    raw_logs = LoginAudit.query.order_by(LoginAudit.timestamp.desc()).limit(5).all()
+    # Calculate a rolling 24-hour timeframe cutoff point
+    time_threshold = datetime.utcnow() - timedelta(hours=24)
     
-    # Dynamic Censor Masking Loop:
-    # Completely scrub details for SUCCESS records but showcase FAILED records intact
+    # Fetch the full historical log matching the timeframe criteria (no limit filter)
+    raw_logs = LoginAudit.query.filter(LoginAudit.timestamp >= time_threshold)\
+                               .order_by(LoginAudit.timestamp.desc()).all()
+    
+    # Core Data-Scrubbing Optimization Filter
     processed_logs = []
     for log in raw_logs:
         if log.status == 'SUCCESS':
             processed_logs.append({
                 'timestamp': log.timestamp,
-                'username': '"Successful"',
-                'ip_address': 'X.X.X.X',  # Anonymize origin tracking IP completely
+                'username': '*** SENSITIVE CLASSIFIED USER ***',
+                'ip_address': 'X.X.X.X',
                 'status': log.status
             })
         else:
             processed_logs.append({
                 'timestamp': log.timestamp,
-                'username': log.username,    # Showcase malicious inputs or wrong names typed
-                'ip_address': log.ip_address,# Showcase malicious source origin point
+                'username': log.username,
+                'ip_address': log.ip_address,
                 'status': log.status
             })
 
@@ -152,21 +154,15 @@ def dashboard():
         total_logins=total_logins,
         success_count=success_count,
         failed_count=failed_count,
-        recent_logs=processed_logs  # Return the safe, filtered dataset to the layout
+        recent_logs=processed_logs
     )
+
 @app.route('/')
 def index():
     if 'user_id' in session:
         return redirect(url_for('dashboard'))
     return redirect(url_for('login'))
 
-@app.route('/camera')
-def camera():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    return render_template('camera.html')
-
-# This restores the missing registration route referenced by login.html
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
@@ -188,3 +184,4 @@ def register():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port)
+    
