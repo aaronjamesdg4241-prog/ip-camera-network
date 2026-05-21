@@ -135,7 +135,7 @@ def dashboard():
         if log.status == 'SUCCESS':
             processed_logs.append({
                 'timestamp': log.timestamp,
-                'username': '*** SENSITIVE CLASSIFIED USER ***',
+                'username': '"Successful"',
                 'ip_address': 'X.X.X.X',  # Anonymize origin tracking IP completely
                 'status': log.status
             })
