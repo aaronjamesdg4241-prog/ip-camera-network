@@ -69,14 +69,12 @@ def login():
         time_window = current_time - timedelta(hours=LOCKOUT_DURATION_HOURS)
 
         # 1. EVALUATE LOCKOUT SYSTEM STATUS
-        # Count recent consecutive failures for this username within the lockout window
         recent_failures = LoginAudit.query.filter(
             LoginAudit.username == username,
             LoginAudit.status == 'FAILED',
             LoginAudit.timestamp >= time_window
         ).order_by(LoginAudit.timestamp.desc()).all()
 
-        # If they have surpassed the threshold, check when the last failure occurred
         if len(recent_failures) >= MAX_LOGIN_ATTEMPTS:
             last_failure_time = recent_failures[0].timestamp
             lockout_expiration = last_failure_time + timedelta(hours=LOCKOUT_DURATION_HOURS)
@@ -85,7 +83,6 @@ def login():
                 time_remaining = lockout_expiration - current_time
                 minutes_left = int(time_remaining.total_seconds() // 60) + 1
                 
-                # Log the blocked event attempt in the audit tracking database
                 audit_entry = LoginAudit(username=username, status='LOCKED', ip_address=user_ip)
                 db.session.add(audit_entry)
                 db.session.commit()
@@ -97,7 +94,6 @@ def login():
         user = User.query.filter_by(username=username).first()
 
         if user and check_password_hash(user.password, password):
-            # Login successful: Write positive confirmation token
             audit_entry = LoginAudit(username=username, status='SUCCESS', ip_address=user_ip)
             db.session.add(audit_entry)
             db.session.commit()
@@ -110,12 +106,10 @@ def login():
             return redirect(url_for('dashboard'))
         
         else:
-            # Login failed: Record the transaction failure to the database ledger
             audit_entry = LoginAudit(username=username, status='FAILED', ip_address=user_ip)
             db.session.add(audit_entry)
             db.session.commit()
 
-            # Re-verify failure totals to calculate the exact feedback warnings
             fail_count = LoginAudit.query.filter(
                 LoginAudit.username == username,
                 LoginAudit.status == 'FAILED',
@@ -153,10 +147,64 @@ def dashboard():
     success_count = LoginAudit.query.filter_by(status='SUCCESS').count()
     failed_count = LoginAudit.query.filter_by(status='FAILED').count()
     
-    # Calculate unique usernames currently locked out in the system
+    # FIXED SUBQUERY: Parenthesis is cleanly terminated
     time_window = datetime.utcnow() - timedelta(hours=LOCKOUT_DURATION_HOURS)
-    
-    # Subquery to identify active bans
     all_recent_fails = LoginAudit.query.filter(
         LoginAudit.status == 'FAILED',
-        LoginAudit
+        LoginAudit.timestamp >= time_window
+    ).all()
+    
+    user_fail_map = {}
+    for f in all_recent_fails:
+        user_fail_map[f.username] = user_fail_map.get(f.username, 0) + 1
+    
+    blocked_count = sum(1 for uname, count in user_fail_map.items() if count >= MAX_LOGIN_ATTEMPTS)
+    
+    time_threshold = datetime.utcnow() - timedelta(hours=24)
+    raw_logs = LoginAudit.query.filter(LoginAudit.timestamp >= time_threshold)\
+                               .order_by(LoginAudit.timestamp.desc()).all()
+    
+    processed_logs = []
+    for log in raw_logs:
+        if log.status == 'SUCCESS':
+            processed_logs.append({
+                'timestamp': log.timestamp,
+                'username': 'Successful',
+                'ip_address': 'X.X.X.X',
+                'status': log.status
+            })
+        else:
+            processed_logs.append({
+                'timestamp': log.timestamp,
+                'username': log.username,
+                'ip_address': log.ip_address,
+                'status': log.status
+            })
+
+    return render_template(
+        'dashboard.html', 
+        total_logins=total_logins,
+        success_count=success_count,
+        failed_count=failed_count,
+        blocked_count=blocked_count,
+        recent_logs=processed_logs
+    )
+
+@app.route('/')
+def index():
+    if 'user_id' in session:
+        return redirect(url_for('dashboard'))
+    return redirect(url_for('login'))
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form['username'].strip()
+        password = request.form['password']
+        existing_user = User.query.filter_by(username=username).first()
+        if existing_user:
+            flash('Username already exists', 'error')
+            return redirect(url_for('register'))
+        
+        hashed_password = generate_password_hash(password)
+        new_user = User(
