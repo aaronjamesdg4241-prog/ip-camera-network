@@ -87,7 +87,7 @@ def login():
                 db.session.add(audit_entry)
                 db.session.commit()
                 
-                flash(f'Your IP address is temporarily blocked due to multiple failed attempts. Try again in {minutes_left} minutes.', 'error')
+                flash(f'Your IP address is temporarily blocked due to multiple failed attempts.', 'error')
                 return render_template('login.html')
 
         # 2. EVALUATE AUTHENTICATION
