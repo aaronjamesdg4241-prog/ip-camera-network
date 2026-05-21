@@ -70,7 +70,6 @@ def login():
         password = request.form['password']
         user = User.query.filter_by(username=username).first()
 
-        # Gather IP data for auditing logs
         user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
 
         if user and check_password_hash(user.password, password):
@@ -79,7 +78,6 @@ def login():
             session['username'] = user.username
             session.permanent = True
             
-            # Write a Successful tracking marker to DB
             audit_entry = LoginAudit(username=username, status='SUCCESS', ip_address=user_ip)
             db.session.add(audit_entry)
             db.session.commit()
@@ -91,7 +89,6 @@ def login():
             session['failed_attempts'] += 1
             remaining_attempts = MAX_LOGIN_ATTEMPTS - session['failed_attempts']
             
-            # Write a Failed tracking marker to DB
             audit_entry = LoginAudit(username=username, status='FAILED', ip_address=user_ip)
             db.session.add(audit_entry)
             db.session.commit()
@@ -114,8 +111,7 @@ def logout():
     session.modified = True
 
     response = redirect(url_for('login'))
-    response.delete_cookie('session')  # Forces the browser to drop the cookie instantly
-    
+    response.delete_cookie('session')  
     return response
 
 @app.route('/dashboard')
@@ -124,7 +120,6 @@ def dashboard():
         flash('Please log in to access the dashboard.', 'error')
         return redirect(url_for('login'))
         
-    # Generate system metrics from our tracking logs
     total_logins = LoginAudit.query.count()
     success_count = LoginAudit.query.filter_by(status='SUCCESS').count()
     failed_count = LoginAudit.query.filter_by(status='FAILED').count()
@@ -149,6 +144,25 @@ def camera():
     if 'user_id' not in session:
         return redirect(url_for('login'))
     return render_template('camera.html')
+
+# This restores the missing registration route referenced by login.html
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        existing_user = User.query.filter_by(username=username).first()
+        if existing_user:
+            flash('Username already exists', 'error')
+            return redirect(url_for('register'))
+        
+        hashed_password = generate_password_hash(password)
+        new_user = User(username=username, password=hashed_password)
+        db.session.add(new_user)
+        db.session.commit()
+        flash('Registration successful! Please log in.', 'success')
+        return redirect(url_for('login'))
+    return render_template('register.html')
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
