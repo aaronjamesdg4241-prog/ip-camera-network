@@ -132,7 +132,7 @@
 <body>
 
 <div class="login-container">
-  <form method="POST">
+  <form method="POST" action="{{ url_for('login') }}">
     <h2>Welcome Back</h2>
     
     {% with messages = get_flashed_messages() %}
