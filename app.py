@@ -105,10 +105,18 @@ def login():
 
 @app.route('/logout')
 def logout():
-    logout_user()    
-    session.clear()    
-    session.modified = True    
-    return redirect(url_for('login'))
+    try:
+        logout_user()
+    except Exception:
+        pass  
+
+    session.clear()
+    session.modified = True
+
+    response = redirect(url_for('login'))
+    response.delete_cookie('session')  # Forces the browser to drop the cookie instantly
+    
+    return response
 
 @app.route('/dashboard')
 def dashboard():
