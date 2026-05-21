@@ -4,7 +4,6 @@ from flask import Flask, render_template, redirect, url_for, request, flash, ses
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, login_user, logout_user, UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy import text
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'supersecretkey') 
@@ -147,7 +146,6 @@ def dashboard():
     success_count = LoginAudit.query.filter_by(status='SUCCESS').count()
     failed_count = LoginAudit.query.filter_by(status='FAILED').count()
     
-    # FIXED SUBQUERY: Parenthesis is cleanly terminated
     time_window = datetime.utcnow() - timedelta(hours=LOCKOUT_DURATION_HOURS)
     all_recent_fails = LoginAudit.query.filter(
         LoginAudit.status == 'FAILED',
@@ -207,4 +205,14 @@ def register():
             return redirect(url_for('register'))
         
         hashed_password = generate_password_hash(password)
-        new_user = User(
+        # FIXED: Balanced arguments and properly terminated the syntax closure loop
+        new_user = User(username=username, password=hashed_password)
+        db.session.add(new_user)
+        db.session.commit()
+        flash('Registration successful! Please log in.', 'success')
+        return redirect(url_for('login'))
+    return render_template('register.html')
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=port)
