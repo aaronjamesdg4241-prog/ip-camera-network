@@ -124,20 +124,25 @@ def dashboard():
     success_count = LoginAudit.query.filter_by(status='SUCCESS').count()
     failed_count = LoginAudit.query.filter_by(status='FAILED').count()
     
-    # Calculate a rolling 24-hour timeframe cutoff point
-    time_threshold = datetime.utcnow() - timedelta(hours=24)
+    # Blocked accounts metric logic:
+    # Aggregates consecutive failed tracking intervals from the audit db
+    blocked_count = db.session.query(LoginAudit.username).\
+        filter(LoginAudit.status == 'FAILED').\
+        group_by(LoginAudit.username).\
+        having(db.func.count(LoginAudit.id) >= MAX_LOGIN_ATTEMPTS).count()
     
-    # Fetch the full historical log matching the timeframe criteria (no limit filter)
+    # Calculate rolling 24-hour cutoff
+    time_threshold = datetime.utcnow() - timedelta(hours=24)
     raw_logs = LoginAudit.query.filter(LoginAudit.timestamp >= time_threshold)\
                                .order_by(LoginAudit.timestamp.desc()).all()
     
-    # Core Data-Scrubbing Optimization Filter
+    # Data-Scrubbing Optimization Filter
     processed_logs = []
     for log in raw_logs:
         if log.status == 'SUCCESS':
             processed_logs.append({
                 'timestamp': log.timestamp,
-                'username': '*** SENSITIVE CLASSIFIED USER ***',
+                'username': 'Successful',  # Updated censorship token name
                 'ip_address': 'X.X.X.X',
                 'status': log.status
             })
@@ -154,6 +159,7 @@ def dashboard():
         total_logins=total_logins,
         success_count=success_count,
         failed_count=failed_count,
+        blocked_count=blocked_count, # Passed to the UI layout
         recent_logs=processed_logs
     )
 
@@ -184,4 +190,3 @@ def register():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port)
-    
