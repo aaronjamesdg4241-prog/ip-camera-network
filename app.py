@@ -120,19 +120,40 @@ def dashboard():
         flash('Please log in to access the dashboard.', 'error')
         return redirect(url_for('login'))
         
+    # Gather database counter aggregates 
     total_logins = LoginAudit.query.count()
     success_count = LoginAudit.query.filter_by(status='SUCCESS').count()
     failed_count = LoginAudit.query.filter_by(status='FAILED').count()
-    recent_logs = LoginAudit.query.order_by(LoginAudit.timestamp.desc()).limit(5).all()
+    
+    # Retrieve recent login tracking entries
+    raw_logs = LoginAudit.query.order_by(LoginAudit.timestamp.desc()).limit(5).all()
+    
+    # Dynamic Censor Masking Loop:
+    # Completely scrub details for SUCCESS records but showcase FAILED records intact
+    processed_logs = []
+    for log in raw_logs:
+        if log.status == 'SUCCESS':
+            processed_logs.append({
+                'timestamp': log.timestamp,
+                'username': '*** SENSITIVE CLASSIFIED USER ***',
+                'ip_address': 'X.X.X.X',  # Anonymize origin tracking IP completely
+                'status': log.status
+            })
+        else:
+            processed_logs.append({
+                'timestamp': log.timestamp,
+                'username': log.username,    # Showcase malicious inputs or wrong names typed
+                'ip_address': log.ip_address,# Showcase malicious source origin point
+                'status': log.status
+            })
 
     return render_template(
         'dashboard.html', 
         total_logins=total_logins,
         success_count=success_count,
         failed_count=failed_count,
-        recent_logs=recent_logs
+        recent_logs=processed_logs  # Return the safe, filtered dataset to the layout
     )
-
 @app.route('/')
 def index():
     if 'user_id' in session:
