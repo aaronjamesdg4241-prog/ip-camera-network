@@ -47,6 +47,7 @@
         .badge.success { background: rgba(16, 185, 129, 0.2); color: #34d399; }
         .badge.failed { background: rgba(244, 63, 94, 0.2); color: #fb7185; }
         .badge.locked { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+        .badge.logout { background: rgba(148, 163, 184, 0.2); color: #cbd5e1; }
     </style>
 </head>
 <body>
@@ -79,6 +80,10 @@
             <h3>Active Blocked IPs</h3>
             <p>{{ blocked_count }}</p>
         </div>
+        <div class="stat-card">
+            <h3>User Logouts</h3>
+            <p>{{ logout_count }}</p>
+        </div>
     </div>
 
     <div class="panel-layout">
@@ -107,6 +112,8 @@
                                     <span class="badge success">Success</span>
                                 {% elif log.status == 'FAILED' %}
                                     <span class="badge failed">Failed</span>
+                                {% elif log.status == 'LOGOUT' %}
+                                    <span class="badge logout">Logout</span>
                                 {% else %}
                                     <span class="badge locked">Locked</span>
                                 {% endif %}
