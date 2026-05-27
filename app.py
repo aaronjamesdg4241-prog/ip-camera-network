@@ -236,22 +236,15 @@ def dashboard():
     raw_logs = LoginAudit.query.filter(LoginAudit.timestamp >= time_threshold)\
                                .order_by(LoginAudit.timestamp.desc()).all()
     
+    # CENSORSHIP REMOVED HERE
     processed_logs = []
     for log in raw_logs:
-        if log.status == 'SUCCESS':
-            processed_logs.append({
-                'timestamp': log.timestamp,
-                'username': 'Successful',
-                'ip_address': 'X.X.X.X',
-                'status': log.status
-            })
-        else:
-            processed_logs.append({
-                'timestamp': log.timestamp,
-                'username': log.username,
-                'ip_address': log.ip_address,
-                'status': log.status
-            })
+        processed_logs.append({
+            'timestamp': log.timestamp,
+            'username': log.username,
+            'ip_address': log.ip_address,
+            'status': log.status
+        })
 
     return render_template(
         'dashboard.html', 
