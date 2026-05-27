@@ -45,7 +45,7 @@ class LoginAudit(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(150), nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-    status = db.Column(db.String(50), nullable=False) # 'SUCCESS', 'FAILED', or 'LOCKED'
+    status = db.Column(db.String(50), nullable=False) # 'SUCCESS', 'FAILED', 'LOCKED', or 'LOGOUT'
     ip_address = db.Column(db.String(50))
 
 @login_manager.user_loader
@@ -187,10 +187,20 @@ def login():
 
 @app.route('/logout')
 def logout():
+    # Log the logout action before clearing the session
+    if 'user_id' in session:
+        username = session.get('username', 'Unknown')
+        user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        
+        audit_entry = LoginAudit(username=username, status='LOGOUT', ip_address=user_ip)
+        db.session.add(audit_entry)
+        db.session.commit()
+
     try:
         logout_user()
     except Exception:
         pass  
+    
     session.clear()
     session.modified = True
     response = redirect(url_for('login'))
@@ -206,6 +216,7 @@ def dashboard():
     total_logins = LoginAudit.query.count()
     success_count = LoginAudit.query.filter_by(status='SUCCESS').count()
     failed_count = LoginAudit.query.filter_by(status='FAILED').count()
+    logout_count = LoginAudit.query.filter_by(status='LOGOUT').count()
     
     # Calculate unique IP Addresses currently locked out
     time_window = datetime.utcnow() - timedelta(hours=LOCKOUT_DURATION_HOURS)
@@ -247,6 +258,7 @@ def dashboard():
         total_logins=total_logins,
         success_count=success_count,
         failed_count=failed_count,
+        logout_count=logout_count,
         blocked_count=blocked_count,
         recent_logs=processed_logs
     )
