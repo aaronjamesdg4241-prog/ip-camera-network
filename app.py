@@ -5,11 +5,17 @@ from flask import Flask, render_template, redirect, url_for, request, flash, ses
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, login_user, logout_user, UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
+# Imported ProxyFix middleware to handle reverse proxy headers securely
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 app = Flask(__name__)
 # Fixes 404 errors by allowing paths with or without trailing slashes
 app.url_map.strict_slashes = False
 app.secret_key = os.environ.get('SECRET_KEY', 'supersecretkey') 
+
+# PROXY CONFIGURATION: Tell Flask to trust exactly 1 upstream proxy (e.g., Nginx/Cloudflare)
+# This automatically cleans and injects the true IP into request.remote_addr
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
 # Multi-worker session cookie tracking configurations
 app.config.update(
@@ -84,10 +90,8 @@ def generate_camera_frames():
     mobile_stream_url = os.environ.get('MOBILE_CAMERA_URL', '')
     
     if mobile_stream_url:
-        # Configuration A: Cloud Deployment / Expose Network Stream Target
         camera = cv2.VideoCapture(mobile_stream_url)
     else:
-        # Configuration B: Local Machine Development USB Webcam Target
         camera = cv2.VideoCapture(0)
     
     while True:
@@ -100,7 +104,6 @@ def generate_camera_frames():
                 continue
             frame_bytes = buffer.tobytes()
             
-            # Clean streaming chunk formatting to prevent string evaluation truncation
             yield (
                 b'--frame\r\n'
                 b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n'
@@ -124,7 +127,10 @@ def login():
     if request.method == 'POST':
         username = request.form['username'].strip()
         password = request.form['password']
-        user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        
+        # Securing IP retrieval: ProxyFix handles the headers, meaning request.remote_addr is now safe to trust directly.
+        user_ip = request.remote_addr
+        
         current_time = datetime.utcnow()
         time_window = current_time - timedelta(hours=LOCKOUT_DURATION_HOURS)
 
@@ -187,10 +193,9 @@ def login():
 
 @app.route('/logout')
 def logout():
-    # Log the logout action before clearing the session
     if 'user_id' in session:
         username = session.get('username', 'Unknown')
-        user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        user_ip = request.remote_addr # Updated here as well
         
         audit_entry = LoginAudit(username=username, status='LOGOUT', ip_address=user_ip)
         db.session.add(audit_entry)
@@ -218,7 +223,6 @@ def dashboard():
     failed_count = LoginAudit.query.filter_by(status='FAILED').count()
     logout_count = LoginAudit.query.filter_by(status='LOGOUT').count()
     
-    # Calculate unique IP Addresses currently locked out
     time_window = datetime.utcnow() - timedelta(hours=LOCKOUT_DURATION_HOURS)
     all_recent_fails = LoginAudit.query.filter(
         LoginAudit.status == 'FAILED',
@@ -236,7 +240,6 @@ def dashboard():
     raw_logs = LoginAudit.query.filter(LoginAudit.timestamp >= time_threshold)\
                                .order_by(LoginAudit.timestamp.desc()).all()
     
-    # CENSORSHIP REMOVED HERE
     processed_logs = []
     for log in raw_logs:
         processed_logs.append({
