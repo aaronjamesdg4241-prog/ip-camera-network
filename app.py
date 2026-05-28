@@ -1,5 +1,5 @@
 import os
-import cv2
+import requests
 from datetime import datetime, timedelta
 from flask import Flask, render_template, redirect, url_for, request, flash, session, Response
 from flask_sqlalchemy import SQLAlchemy
@@ -38,6 +38,10 @@ db = SQLAlchemy(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
+
+# CONFIGURATION: Paste your live Pinggy secure tunnel link inside the quotes here,
+# or set PINGGY_TUNNEL_URL as an environment variable in your Railway dashboard.
+PINGGY_TUNNEL_URL = os.environ.get('PINGGY_TUNNEL_URL', 'https://YOUR_PINGGY_URL_HERE')
 
 # Relational Tables
 class User(UserMixin, db.Model):
@@ -80,40 +84,30 @@ MAX_LOGIN_ATTEMPTS = 3
 LOCKOUT_DURATION_HOURS = 1
 
 # ==========================================
-# UNIVERSAL VIDEO GENERATOR STREAM ENGINE
+# REVERSE PROXY TUNNEL ROUTING ENGINE
 # ==========================================
-def generate_camera_frames():
-    """
-    Connects to either an external network tunnel (ngrok/RTSP/Tablet app) 
-    or defaults back to index 0 for a directly plugged-in USB desktop webcam.
-    """
-    mobile_stream_url = os.environ.get('MOBILE_CAMERA_URL', '')
-    
-    if mobile_stream_url:
-        camera = cv2.VideoCapture(mobile_stream_url)
-    else:
-        camera = cv2.VideoCapture(0)
-    
-    while True:
-        success, frame = camera.read()
-        if not success:
-            break
-        else:
-            ret, buffer = cv2.imencode('.jpg', frame)
-            if not ret:
-                continue
-            frame_bytes = buffer.tobytes()
-            
-            yield (
-                b'--frame\r\n'
-                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n'
-            )
-
 @app.route('/video_feed')
 def video_feed():
     if 'user_id' not in session:
         return "Unauthorized", 401
-    return Response(generate_camera_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+        
+    def stream_proxy():
+        try:
+            # Build the direct path down your live Pinggy tunnel link
+            target_url = f"{PINGGY_TUNNEL_URL.rstrip('/')}/video_feed"
+            # Establish stream pipeline with a safe fallback network timeout
+            response = requests.get(target_url, stream=True, timeout=10)
+            
+            for chunk in response.iter_content(chunk_size=4096):
+                if chunk:
+                    yield chunk
+        except Exception as e:
+            print(f"Tunnel routing disconnected: {e}")
+            pass
+
+    # Forward the dynamic stream content type back to the web browser interface
+    # Using video/mp4 matching your high-performance local script wrapper
+    return Response(stream_proxy(), mimetype='video/mp4')
 
 
 # ==========================================
@@ -128,7 +122,6 @@ def login():
         username = request.form['username'].strip()
         password = request.form['password']
         
-        # Securing IP retrieval: ProxyFix handles the headers, meaning request.remote_addr is now safe to trust directly.
         user_ip = request.remote_addr
         
         current_time = datetime.utcnow()
@@ -195,7 +188,7 @@ def login():
 def logout():
     if 'user_id' in session:
         username = session.get('username', 'Unknown')
-        user_ip = request.remote_addr # Updated here as well
+        user_ip = request.remote_addr
         
         audit_entry = LoginAudit(username=username, status='LOGOUT', ip_address=user_ip)
         db.session.add(audit_entry)
