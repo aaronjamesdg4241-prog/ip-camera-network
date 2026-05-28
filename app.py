@@ -39,9 +39,8 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
-# CONFIGURATION: Paste your live Pinggy secure tunnel link inside the quotes here,
-# or set PINGGY_TUNNEL_URL as an environment variable in your Railway dashboard.
-PINGGY_TUNNEL_URL = os.environ.get('PINGGY_TUNNEL_URL', 'https://YOUR_PINGGY_URL_HERE')
+
+PINGGY_TUNNEL_URL = os.environ.get('PINGGY_TUNNEL_URL', 'http://hlhqp-103-196-139-3.run.pinggy-free.link')
 
 # Relational Tables
 class User(UserMixin, db.Model):
