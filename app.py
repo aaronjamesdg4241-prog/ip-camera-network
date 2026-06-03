@@ -192,7 +192,20 @@ def logout():
     response.delete_cookie('session')  
     return response
 
+#   WHAT IT SHOULD LOOK LIKE (Fixed)
 @app.route('/dashboard')
 def dashboard():
     if 'user_id' not in session:
-        flash('Please
+        flash('Please log in to access the dashboard.', 'error')
+        return redirect(url_for('login'))
+        
+    total_logins = LoginAudit.query.count()
+    success_count = LoginAudit.query.filter_by(status='SUCCESS').count()
+    failed_count = LoginAudit.query.filter_by(status='FAILED').count()
+    logout_count = LoginAudit.query.filter_by(status='LOGOUT').count()
+    
+    time_window = datetime.utcnow() - timedelta(hours=LOCKOUT_DURATION_HOURS)
+    all_recent_fails = LoginAudit.query.filter(
+        LoginAudit.status == 'FAILED',
+        LoginAudit.timestamp >= time_window
+    ).all()
