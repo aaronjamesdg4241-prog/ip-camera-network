@@ -193,6 +193,9 @@ def logout():
 # ==========================================
 # FIXED DASHBOARD ROUTE (Syntax Restored)
 # ==========================================
+# ==========================================
+# FIXED DASHBOARD ROUTE (Syntax Restored)
+# ==========================================
 @app.route('/dashboard', methods=['GET'])
 def dashboard():
     if 'user_id' not in session:
@@ -202,4 +205,41 @@ def dashboard():
     total_logins = LoginAudit.query.count()
     success_count = LoginAudit.query.filter_by(status='SUCCESS').count()
     failed_count = LoginAudit.query.filter_by(status='FAILED').count()
-    logout_count = LoginAudit.query.filter_by(status
+    logout_count = LoginAudit.query.filter_by(status='LOGOUT').count()
+    
+    time_window = datetime.utcnow() - timedelta(hours=LOCKOUT_DURATION_HOURS)
+    all_recent_fails = LoginAudit.query.filter(
+        LoginAudit.status == 'FAILED',
+        LoginAudit.timestamp >= time_window
+    ).all()
+    
+    ip_fail_map = {}
+    for f in all_recent_fails:
+        if f.ip_address:
+            key = f"{f.ip_address}_{f.username}"
+            ip_fail_map[key] = ip_fail_map.get(key, 0) + 1
+    
+    blocked_count = sum(1 for count in ip_fail_map.values() if count >= MAX_LOGIN_ATTEMPTS)
+    
+    time_threshold = datetime.utcnow() - timedelta(hours=24)
+    raw_logs = LoginAudit.query.filter(LoginAudit.timestamp >= time_threshold)\
+                               .order_by(LoginAudit.timestamp.desc()).all()
+    
+    processed_logs = []
+    for log in raw_logs:
+        processed_logs.append({
+            'timestamp': log.timestamp.strftime('%Y-%m-%d %H:%M:%S UTC'),
+            'username': log.username,
+            'ip_address': log.ip_address,
+            'status': log.status
+        })
+
+    return render_template(
+        'dashboard.html', 
+        total_logins=total_logins,
+        success_count=success_count,
+        failed_count=failed_count,
+        logout_count=logout_count,
+        blocked_count=blocked_count,
+        recent_logs=processed_logs
+    )
