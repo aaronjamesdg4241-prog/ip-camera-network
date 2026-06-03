@@ -5,25 +5,21 @@ from flask import Flask, render_template, redirect, url_for, request, flash, ses
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, login_user, logout_user, UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
-# Imported ProxyFix middleware to handle reverse proxy headers securely
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 app = Flask(__name__)
-# Fixes 404 errors by allowing paths with or without trailing slashes
 app.url_map.strict_slashes = False
-app.secret_key = os.environ.get('SECRET_KEY', 'supersecretkey') 
+app.secret_key = os.environ.get('SECRET_KEY', 'supersecretkey')
 
-# PROXY CONFIGURATION: Tell Flask to trust exactly 1 upstream proxy (e.g., Nginx/Cloudflare)
-# This automatically cleans and injects the true IP into request.remote_addr
+# PROXY CONFIGURATION
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
-# Multi-worker session cookie tracking configurations
 app.config.update(
-    SESSION_COOKIE_SECURE=False,     
+    SESSION_COOKIE_SECURE=False,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
     REMEMBER_COOKIE_HTTPONLY=True,
-    REMEMBER_COOKIE_DURATION=3600    
+    REMEMBER_COOKIE_DURATION=3600
 )
 
 raw_db_url = os.environ.get('DATABASE_URL')
@@ -39,7 +35,7 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
-# Updated fallback to have correct 'loclx' spelling and safe HTTPS routing
+# Get tunnel URL from environment variable
 LOCALXPOSE_TUNNEL_URL = os.environ.get('PINGGY_TUNNEL_URL', 'https://wqto6cwuow.loclx.io')
 
 # Relational Tables
@@ -54,7 +50,7 @@ class LoginAudit(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(150), nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-    status = db.Column(db.String(50), nullable=False) # 'SUCCESS', 'FAILED', 'LOCKED', or 'LOGOUT'
+    status = db.Column(db.String(50), nullable=False)
     ip_address = db.Column(db.String(50))
 
 @login_manager.user_loader
@@ -62,13 +58,11 @@ def load_user(user_id):
     return User.query.get(int(user_id))
 
 # ==========================================
-# APPLICATION CONTEXT INITIALIZATION & RESET
+# APPLICATION CONTEXT INITIALIZATION
 # ==========================================
 with app.app_context():
     db.create_all()
     
-    # OPERATIONS RESET BLOCK: Wipes out the ledger tracking 
-    # records to lift active IP bans every time the container boots.
     try:
         db.session.query(LoginAudit).delete()
         db.session.commit()
@@ -83,7 +77,7 @@ MAX_LOGIN_ATTEMPTS = 3
 LOCKOUT_DURATION_HOURS = 1
 
 # ==========================================
-# REVERSE PROXY TUNNEL ROUTING ENGINE
+# CAMERA STREAM PROXY - FIXED VERSION
 # ==========================================
 @app.route('/video_feed')
 def video_feed():
@@ -91,27 +85,38 @@ def video_feed():
         return "Unauthorized", 401
         
     def stream_proxy():
-        # Build the path targeting your local streaming endpoint
-        target_url = f"{LOCALXPOSE_TUNNEL_URL.rstrip('/')}/video_feed"
         try:
-            # Connect to your local computer's camera script stream with a timeout fallback
-            response = requests.get(target_url, stream=True, timeout=10)
+            # Build the target URL to your local tunnel
+            target_url = f"{PINGGY_TUNNEL_URL.rstrip('/')}/video_feed"
             
-            # Read and yield byte chunks cleanly as they flow up from your local tunnel
-            for chunk in response.iter_content(chunk_size=4096):
+            if not PINGGY_TUNNEL_URL:
+                print("[ERROR] PINGGY_TUNNEL_URL environment variable not set")
+                yield b''
+                return
+            
+            print(f"[INFO] Proxying video feed from: {target_url}")
+            
+            # Make request to the tunnel with streaming
+            response = requests.get(target_url, stream=True, timeout=5)
+            
+            # Forward the exact same content type (multipart/x-mixed-replace)
+            # This is critical for MJPEG streaming
+            for chunk in response.iter_content(chunk_size=1024):
                 if chunk:
                     yield chunk
+                    
+        except requests.exceptions.Timeout:
+            print("[ERROR] Timeout connecting to tunnel")
+            yield b''
+        except requests.exceptions.ConnectionError as e:
+            print(f"[ERROR] Connection error to tunnel: {e}")
+            yield b''
         except Exception as e:
-            print(f"Tunnel routing disconnected: {e}")
-            # Optional asset fallback path can be yielded here if needed
-
-    # Corrected mimetype to multipart/x-mixed-replace to allow standard <img> HTML components
-    # to naturally parse and swap out streaming frames on the fly.
-    return Response(
-        stream_proxy(), 
-        mimetype='multipart/x-mixed-replace; boundary=frame'
-    )
-
+            print(f"[ERROR] Stream proxy error: {e}")
+            yield b''
+    
+    # Return with the correct MJPEG mimetype
+    return Response(stream_proxy(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 # ==========================================
 # SECURE INTERFACE ROUTING LOGIC
@@ -200,12 +205,12 @@ def logout():
     try:
         logout_user()
     except Exception:
-        pass  
+        pass
     
     session.clear()
     session.modified = True
     response = redirect(url_for('login'))
-    response.delete_cookie('session')  
+    response.delete_cookie('session')
     return response
 
 @app.route('/dashboard')
