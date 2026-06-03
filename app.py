@@ -40,7 +40,7 @@ login_manager.init_app(app)
 login_manager.login_view = 'login'
 
 # Updated fallback to have correct 'loclx' spelling and safe HTTPS routing
-LOCALXPOSE_TUNNEL_URL = os.environ.get('PINGGY_TUNNEL_URL', 'https://2lhde42eli.loclx.io')
+LOCALXPOSE_TUNNEL_URL = os.environ.get('PINGGY_TUNNEL_URL', 'https://bhb1hzp3z3.loclx.io')
 
 # Relational Tables
 class User(UserMixin, db.Model):
