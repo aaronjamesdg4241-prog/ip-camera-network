@@ -11,7 +11,7 @@ app = Flask(__name__)
 app.url_map.strict_slashes = False
 app.secret_key = os.environ.get('SECRET_KEY', 'supersecretkey') 
 
-# Trust the Railway/Cloudflare reverse proxy headers to get true IP addresses
+# Trust Railway/Cloudflare proxy headers to capture accurate client IP addresses
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
 app.config.update(
@@ -35,9 +35,8 @@ login_manager.init_app(app)
 login_manager.login_view = 'login'
 
 # ==========================================
-# TUNNEL CONFIGURATION (Updated for Zrok)
-# Checks for a ZROK URL first, but falls back to your old PINGGY variable 
-# so your app doesn't crash before you update the Railway dashboard variables.
+# TUNNEL PIPELINE CONFIGURATION
+# Hunts for ZROK_TUNNEL_URL, with PINGGY_TUNNEL_URL as an automatic fallback
 # ==========================================
 ACTIVE_TUNNEL_URL = os.environ.get('ZROK_TUNNEL_URL') or os.environ.get('PINGGY_TUNNEL_URL', 'https://16bhbcks94ha.shares.zrok.io')
 
@@ -82,20 +81,19 @@ def video_feed():
     def stream_proxy():
         target_url = f"{ACTIVE_TUNNEL_URL.rstrip('/')}/video_feed"
         try:
-            # Connect to Zrok with custom headers to prevent bot-blocking
             headers = {"User-Agent": "Railway-Cloud-Backend"}
             response = requests.get(target_url, stream=True, timeout=(5, 15), headers=headers)
             
-            # CRITICAL FIX: Verify Zrok actually returned the video feed and not a 502 Offline HTML Error page
+            # Verify zrok actually returned the stream instead of a 502 Offline text card
             if response.status_code == 200 and 'multipart/x-mixed-replace' in response.headers.get('Content-Type', ''):
                 for chunk in response.iter_content(chunk_size=4096):
                     if chunk:
                         yield chunk
             else:
-                print(f"[WARNING] Zrok connected, but camera is offline. Status: {response.status_code}")
+                print(f"[WARNING] Tunnel endpoint connected, but stream is down. Status: {response.status_code}")
                 
         except requests.exceptions.RequestException as e:
-            print(f"[ERROR] Zrok network pipeline broken: {e}")
+            print(f"[ERROR] Live network pipeline broken: {e}")
 
     return Response(
         stream_proxy(), 
@@ -103,7 +101,7 @@ def video_feed():
     )
 
 # ==========================================
-# SECURE INTERFACE ROUTING
+# SECURE ROUTING & AUTHENTICATION
 # ==========================================
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -118,7 +116,7 @@ def login():
         current_time = datetime.utcnow()
         time_window = current_time - timedelta(hours=LOCKOUT_DURATION_HOURS)
 
-        # PREVENTS NAT MASS-LOCKOUTS: Checks specific Username AND IP combination
+        # Secure matching across unique IP + Username pairing to prevent global NAT locks
         recent_failures = LoginAudit.query.filter(
             LoginAudit.ip_address == user_ip,
             LoginAudit.username == username,
@@ -192,8 +190,10 @@ def logout():
     response.delete_cookie('session')  
     return response
 
-#   WHAT IT SHOULD LOOK LIKE (Fixed)
-@app.route('/dashboard')
+# ==========================================
+# FIXED DASHBOARD ROUTE (Syntax Restored)
+# ==========================================
+@app.route('/dashboard', methods=['GET'])
 def dashboard():
     if 'user_id' not in session:
         flash('Please log in to access the dashboard.', 'error')
@@ -202,10 +202,4 @@ def dashboard():
     total_logins = LoginAudit.query.count()
     success_count = LoginAudit.query.filter_by(status='SUCCESS').count()
     failed_count = LoginAudit.query.filter_by(status='FAILED').count()
-    logout_count = LoginAudit.query.filter_by(status='LOGOUT').count()
-    
-    time_window = datetime.utcnow() - timedelta(hours=LOCKOUT_DURATION_HOURS)
-    all_recent_fails = LoginAudit.query.filter(
-        LoginAudit.status == 'FAILED',
-        LoginAudit.timestamp >= time_window
-    ).all()
+    logout_count = LoginAudit.query.filter_by(status
