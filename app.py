@@ -40,7 +40,7 @@ login_manager.init_app(app)
 login_manager.login_view = 'login'
 
 
-PINGGY_TUNNEL_URL = os.environ.get('PINGGY_TUNNEL_URL', 'http://2lhde42eli.locx.io')
+PINGGY_TUNNEL_URL = os.environ.get('PINGGY_TUNNEL_URL', 'https://2lhde42eli.loclx.io')
 
 # Relational Tables
 class User(UserMixin, db.Model):
