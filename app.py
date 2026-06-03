@@ -36,7 +36,7 @@ login_manager.init_app(app)
 login_manager.login_view = 'login'
 
 # Get tunnel URL from environment variable
-LOCALXPOSE_TUNNEL_URL = os.environ.get('PINGGY_TUNNEL_URL', 'https://wqto6cwuow.loclx.io')
+LOCALXPOSE_TUNNEL_URL = os.environ.get('PINGGY_TUNNEL_URL', 'http://udq3s8ommi.ap.loclx.io')
 
 # Relational Tables
 class User(UserMixin, db.Model):
