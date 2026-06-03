@@ -39,8 +39,8 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
-
-PINGGY_TUNNEL_URL = os.environ.get('PINGGY_TUNNEL_URL', 'https://2lhde42eli.loclx.io')
+# Updated fallback to have correct 'loclx' spelling and safe HTTPS routing
+LOCALXPOSE_TUNNEL_URL = os.environ.get('PINGGY_TUNNEL_URL', 'https://2lhde42eli.loclx.io')
 
 # Relational Tables
 class User(UserMixin, db.Model):
@@ -91,22 +91,26 @@ def video_feed():
         return "Unauthorized", 401
         
     def stream_proxy():
+        # Build the path targeting your local streaming endpoint
+        target_url = f"{LOCALXPOSE_TUNNEL_URL.rstrip('/')}/video_feed"
         try:
-            # Build the direct path down your live Pinggy tunnel link
-            target_url = f"{PINGGY_TUNNEL_URL.rstrip('/')}/video_feed"
-            # Establish stream pipeline with a safe fallback network timeout
+            # Connect to your local computer's camera script stream with a timeout fallback
             response = requests.get(target_url, stream=True, timeout=10)
             
+            # Read and yield byte chunks cleanly as they flow up from your local tunnel
             for chunk in response.iter_content(chunk_size=4096):
                 if chunk:
                     yield chunk
         except Exception as e:
             print(f"Tunnel routing disconnected: {e}")
-            pass
+            # Optional asset fallback path can be yielded here if needed
 
-    # Forward the dynamic stream content type back to the web browser interface
-    # Using video/mp4 matching your high-performance local script wrapper
-    return Response(stream_proxy(), mimetype='video/mp4')
+    # Corrected mimetype to multipart/x-mixed-replace to allow standard <img> HTML components
+    # to naturally parse and swap out streaming frames on the fly.
+    return Response(
+        stream_proxy(), 
+        mimetype='multipart/x-mixed-replace; boundary=frame'
+    )
 
 
 # ==========================================
