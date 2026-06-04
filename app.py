@@ -34,11 +34,12 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
-# ==========================================
+# ============================================================================
 # TUNNEL PIPELINE CONFIGURATION
-# Hunts for ZROK_TUNNEL_URL, with PINGGY_TUNNEL_URL as an automatic fallback
-# ==========================================
-ACTIVE_TUNNEL_URL = os.environ.get('ZROK_TUNNEL_URL') or os.environ.get('PINGGY_TUNNEL_URL', 'https://16bhbcks94ha.shares.zrok.io')
+# Reads from Railway's panel environment tokens first. Falls back natively to 
+# your verified active zrok share address so the cloud server remains online.
+# ============================================================================
+ACTIVE_TUNNEL_URL = os.environ.get('ZROK_TUNNEL_URL') or os.environ.get('PINGGY_TUNNEL_URL', 'https://fx4og87yqkex.shares.zrok.io')
 
 class User(UserMixin, db.Model):
     __tablename__ = 'account_user'
@@ -190,9 +191,6 @@ def logout():
     response.delete_cookie('session')  
     return response
 
-# ==========================================
-# FIXED DASHBOARD ROUTE (Syntax Restored)
-# ==========================================
 # ==========================================
 # FIXED DASHBOARD ROUTE (Syntax Restored)
 # ==========================================
