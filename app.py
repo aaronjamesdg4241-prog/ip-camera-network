@@ -1,245 +1,175 @@
+import cv2
+import threading
+import time
+import numpy as np
+from flask import Flask, Response
+from queue import Queue
 import os
-import requests
-from datetime import datetime, timedelta
-from flask import Flask, render_template, redirect, url_for, request, flash, session, Response
-from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager, login_user, logout_user, UserMixin
-from werkzeug.security import generate_password_hash, check_password_hash
-from werkzeug.middleware.proxy_fix import ProxyFix
 
 app = Flask(__name__)
-app.url_map.strict_slashes = False
-app.secret_key = os.environ.get('SECRET_KEY', 'supersecretkey') 
+frame_queue = Queue(maxsize=2)
 
-# Trust Railway/Cloudflare proxy headers to capture accurate client IP addresses
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
-
-app.config.update(
-    SESSION_COOKIE_SECURE=False,     
-    SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE='Lax',
-    REMEMBER_COOKIE_HTTPONLY=True,
-    REMEMBER_COOKIE_DURATION=3600    
-)
-
-raw_db_url = os.environ.get('DATABASE_URL')
-if raw_db_url and raw_db_url.startswith("postgresql://"):
-    raw_db_url = raw_db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
-
-app.config['SQLALCHEMY_DATABASE_URI'] = raw_db_url or 'sqlite:///local_system.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-db = SQLAlchemy(app)
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = 'login'
-
-# ============================================================================
-# TUNNEL PIPELINE CONFIGURATION
-# Reads from Railway's panel environment tokens first. Falls back natively to 
-# your verified active zrok share address so the cloud server remains online.
-# ============================================================================
-ACTIVE_TUNNEL_URL = os.environ.get('ZROK_TUNNEL_URL') or os.environ.get('PINGGY_TUNNEL_URL', 'https://fx4og87yqkex.shares.zrok.io')
-
-class User(UserMixin, db.Model):
-    __tablename__ = 'account_user'
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(150), unique=True, nullable=False)
-    password = db.Column(db.Text, nullable=False)
-
-class LoginAudit(db.Model):
-    __tablename__ = 'login_audit'
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(150), nullable=False)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-    status = db.Column(db.String(50), nullable=False) 
-    ip_address = db.Column(db.String(50))
-
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(int(user_id))
-
-with app.app_context():
-    db.create_all()
+def capture_obs():
+    """Capture from OBS Virtual Camera (Index 1) with headless environment safety."""
+    print("[INFO] Connecting to OBS Virtual Camera at index 1...")
+    
+    CAMERA_INDEX = 1
+    
+    # On headless cloud environments (like Railway), index 1 won't exist.
+    # We trap the initialization so the thread handles the failure gracefully.
     try:
-        db.session.query(LoginAudit).delete()
-        db.session.commit()
-        print("DATABASE MAINTENANCE: Active login ban lists cleared on boot.")
+        cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_DSHOW if os.name == 'nt' else cv2.CAP_ANY)
+        if not cap.isOpened():
+            print("[ERROR] Cannot open camera index 1! Operating in cloud/fallback dummy mode.")
+            cap = None
     except Exception as e:
-        db.session.rollback()
+        print(f"[ERROR] Native video framework exception: {e}. Defaulting to dummy stream.")
+        cap = None
 
-MAX_LOGIN_ATTEMPTS = 3
-LOCKOUT_DURATION_HOURS = 1
+    if cap is not None:
+        print("[SUCCESS] Connected to OBS Virtual Camera!")
+        # Configure camera hardware properties
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 854)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        cap.set(cv2.CAP_PROP_FPS, 30)
+        print("[INFO] Starting hardware frame capture loop...")
+    
+    frame_count = 0
+    last_fps_log = time.time()
+    
+    while True:
+        # If camera is down or on a headless server, skip reading and let generator show placeholder
+        if cap is None or not cap.isOpened():
+            time.sleep(1.0)
+            continue
+            
+        ret, frame = cap.read()
+        
+        if ret and frame is not None:
+            frame_count += 1
+            
+            # Log operational FPS performance data every 5 seconds
+            if time.time() - last_fps_log >= 5:
+                fps = frame_count / 5
+                print(f"[LIVE] Streaming from local hardware at {fps:.1f} FPS")
+                frame_count = 0
+                last_fps_log = time.time()
+            
+            # Embed status timestamp matrix overlay directly into frame
+            cv2.putText(frame, f"OBS Virtual Camera | {time.strftime('%H:%M:%S')}",
+                        (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            
+            # Encode frame array to low-latency high-compression JPEG formats
+            ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
+            
+            if ret:
+                # Thread-safe pipeline flush: Keep only the freshest frames in queue
+                while frame_queue.qsize() >= 2:
+                    try:
+                        frame_queue.get_nowait()
+                    except:
+                        pass
+                frame_queue.put(buffer.tobytes())
+        else:
+            print("[WARNING] Empty frame payload received from hardware source")
+            time.sleep(0.1)
+        
+        time.sleep(0.033)  # Throttle runtime pacing to maintain ~30 FPS profile
 
-# ==========================================
-# ZROK REVERSE PROXY CAMERA ENGINE
-# ==========================================
+def generate_frames():
+    """Generate frames for multipart web stream output."""
+    while True:
+        try:
+            # Fetch latest frame out of the tracking buffer queue
+            frame_bytes = frame_queue.get(timeout=0.5)
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+        except:
+            # Render and yield high-visibility placeholder state image if frame streams are dead
+            placeholder = np.zeros((480, 854, 3), dtype=np.uint8)
+            cv2.putText(placeholder, "Waiting for OBS Virtual Camera Tunnel...", (160, 220),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+            cv2.putText(placeholder, "Ensure local zrok proxy and OBS Virtual Cam are active.", (140, 270),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            
+            ret, buffer = cv2.imencode('.jpg', placeholder)
+            if ret:
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+            time.sleep(0.1)
+
+@app.route('/')
+def index():
+    return '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>OBS Virtual Camera Stream</title>
+        <style>
+            body {
+                background: #0f172a;
+                text-align: center;
+                color: white;
+                font-family: 'Segoe UI', Arial, sans-serif;
+                padding: 20px;
+                margin: 0;
+            }
+            .container { max-width: 1200px; margin: 0 auto; }
+            img {
+                width: 100%;
+                max-width: 854px;
+                border: 3px solid #3b82f6;
+                border-radius: 12px;
+                background: #000;
+                box-shadow: 0 0 30px rgba(59,130,246,0.3);
+            }
+            .status { color: #3b82f6; font-weight: bold; margin-top: 20px; font-size: 18px; }
+            .info {
+                background: #1e293b;
+                padding: 15px;
+                border-radius: 8px;
+                margin-top: 20px;
+                font-size: 14px;
+                text-align: left;
+                max-width: 600px;
+                margin-left: auto;
+                margin-right: auto;
+            }
+            .success { color: #10b981; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🎥 OBS Virtual Camera Stream</h1>
+            <img src="/video_feed" id="stream">
+            <div class="status">
+                <span class="success">● ONLINE</span> Stream pipeline initialized
+            </div>
+            <div class="info">
+                <strong>📹 Source Transport Configuration:</strong><br>
+                • Targeting Interface: Index 1 (OBS Virtual Camera Context)<br>
+                • Video Geometry: 854x480 resolution matrix @ ~30fps<br>
+                • Distribution Method: MJPEG Multipart Stream Proxy Tunnel via zrok
+            </div>
+        </div>
+    </body>
+    </html>
+    '''
+
 @app.route('/video_feed')
 def video_feed():
-    if 'user_id' not in session:
-        return "Unauthorized", 401
-        
-    def stream_proxy():
-        target_url = f"{ACTIVE_TUNNEL_URL.rstrip('/')}/video_feed"
-        try:
-            headers = {"User-Agent": "Railway-Cloud-Backend"}
-            # Stream timeout optimized for non-blocking proxy transport engines
-            response = requests.get(target_url, stream=True, timeout=(5, 20), headers=headers)
-            
-            # Verify zrok actually returned the stream instead of a 502 Offline text card
-            if response.status_code == 200 and 'multipart/x-mixed-replace' in response.headers.get('Content-Type', ''):
-                for chunk in response.iter_content(chunk_size=8192): # Slightly increased frame buffer allocation
-                    if chunk:
-                        yield chunk
-            else:
-                print(f"[WARNING] Tunnel endpoint connected, but stream is down. Status: {response.status_code}")
-                
-        except requests.exceptions.RequestException as e:
-            print(f"[ERROR] Live network pipeline broken: {e}")
+    return Response(generate_frames(),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
 
-    return Response(
-        stream_proxy(), 
-        mimetype='multipart/x-mixed-replace; boundary=frame'
-    )
+# Auto-start capture background daemon immediately upon script load.
+# This prevents Gunicorn imports from stalling on terminal input locks.
+capture_thread = threading.Thread(target=capture_obs, daemon=True)
+capture_thread.start()
 
-# ==========================================
-# SECURE ROUTING & AUTHENTICATION
-# ==========================================
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if 'user_id' in session:
-        return redirect(url_for('dashboard'))
-
-    if request.method == 'POST':
-        username = request.form['username'].strip()
-        password = request.form['password']
-        user_ip = request.remote_addr
-        
-        current_time = datetime.utcnow()
-        time_window = current_time - timedelta(hours=LOCKOUT_DURATION_HOURS)
-
-        # Secure matching across unique IP + Username pairing to prevent global NAT locks
-        recent_failures = LoginAudit.query.filter(
-            LoginAudit.ip_address == user_ip,
-            LoginAudit.username == username,
-            LoginAudit.status == 'FAILED',
-            LoginAudit.timestamp >= time_window
-        ).order_by(LoginAudit.timestamp.desc()).all()
-
-        if len(recent_failures) >= MAX_LOGIN_ATTEMPTS:
-            last_failure_time = recent_failures[0].timestamp
-            lockout_expiration = last_failure_time + timedelta(hours=LOCKOUT_DURATION_HOURS)
-
-            if current_time < lockout_expiration:
-                time_remaining = lockout_expiration - current_time
-                minutes_left = int(time_remaining.total_seconds() // 60) + 1
-                
-                db.session.add(LoginAudit(username=username, status='LOCKED', ip_address=user_ip))
-                db.session.commit()
-                
-                flash(f'Account temporarily locked. Try again in {minutes_left} minutes.', 'error')
-                return render_template('login.html')
-
-        user = User.query.filter_by(username=username).first()
-
-        if user and check_password_hash(user.password, password):
-            db.session.add(LoginAudit(username=username, status='SUCCESS', ip_address=user_ip))
-            db.session.commit()
-
-            session['user_id'] = user.id
-            session['username'] = user.username
-            session.permanent = True
-            login_user(user, remember=True)
-            return redirect(url_for('dashboard'))
-        
-        else:
-            db.session.add(LoginAudit(username=username, status='FAILED', ip_address=user_ip))
-            db.session.commit()
-
-            fail_count = LoginAudit.query.filter(
-                LoginAudit.ip_address == user_ip,
-                LoginAudit.username == username,
-                LoginAudit.status == 'FAILED',
-                LoginAudit.timestamp >= time_window
-            ).count()
-
-            remaining_attempts = MAX_LOGIN_ATTEMPTS - fail_count
-            
-            if remaining_attempts <= 0:
-                flash(f'Account locked for {LOCKOUT_DURATION_HOURS} hour.', 'error')
-            else:
-                flash(f'Invalid credentials. {remaining_attempts} attempts remaining.', 'error')
-                
-    return render_template('login.html')
-
-@app.route('/logout')
-def logout():
-    if 'user_id' in session:
-        db.session.add(LoginAudit(
-            username=session.get('username', 'Unknown'), 
-            status='LOGOUT', 
-            ip_address=request.remote_addr
-        ))
-        db.session.commit()
-
-    try:
-        logout_user()
-    except Exception:
-        pass  
-    
-    session.clear()
-    response = redirect(url_for('login'))
-    response.delete_cookie('session')  
-    return response
-
-# ==========================================
-# FIXED DASHBOARD ROUTE (Syntax Restored)
-# ==========================================
-@app.route('/dashboard', methods=['GET'])
-def dashboard():
-    if 'user_id' not in session:
-        flash('Please log in to access the dashboard.', 'error')
-        return redirect(url_for('login'))
-        
-    total_logins = LoginAudit.query.count()
-    success_count = LoginAudit.query.filter_by(status='SUCCESS').count()
-    failed_count = LoginAudit.query.filter_by(status='FAILED').count()
-    logout_count = LoginAudit.query.filter_by(status='LOGOUT').count()
-    
-    time_window = datetime.utcnow() - timedelta(hours=LOCKOUT_DURATION_HOURS)
-    all_recent_fails = LoginAudit.query.filter(
-        LoginAudit.status == 'FAILED',
-        LoginAudit.timestamp >= time_window
-    ).all()
-    
-    ip_fail_map = {}
-    for f in all_recent_fails:
-        if f.ip_address:
-            key = f"{f.ip_address}_{f.username}"
-            ip_fail_map[key] = ip_fail_map.get(key, 0) + 1
-    
-    blocked_count = sum(1 for count in ip_fail_map.values() if count >= MAX_LOGIN_ATTEMPTS)
-    
-    time_threshold = datetime.utcnow() - timedelta(hours=24)
-    raw_logs = LoginAudit.query.filter(LoginAudit.timestamp >= time_threshold)\
-                               .order_by(LoginAudit.timestamp.desc()).all()
-    
-    processed_logs = []
-    for log in raw_logs:
-        # FIX: Pre-format the timestamp string here in Python before passing to Jinja context
-        processed_logs.append({
-            'timestamp': log.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
-            'username': log.username,
-            'ip_address': log.ip_address,
-            'status': log.status
-        })
-
-    return render_template(
-        'dashboard.html', 
-        total_logins=total_logins,
-        success_count=success_count,
-        failed_count=failed_count,
-        logout_count=logout_count,
-        blocked_count=blocked_count,
-        recent_logs=processed_logs
-    )
+if __name__ == '__main__':
+    # Reading clean dynamic environment target ports bound by web proxy assignments
+    target_port = int(os.environ.get("PORT", 5000))
+    print("="*60)
+    print(f"🌐 NATIVE INSTANCE INITIALIZED. BINDING TO PORT: {target_port}")
+    print("="*60)
+    app.run(host='0.0.0.0', port=target_port, debug=False, threaded=True)
