@@ -1,49 +1,22 @@
-import cv2
-import threading
-import time
-import numpy as np
-from flask import Flask, Response
-from queue import Queue
+from flask import Flask
 import os
 
 app = Flask(__name__)
-frame_queue = Queue(maxsize=2)
 
-# Move the camera logic into a wrapper that starts only when needed
-def capture_obs():
-    print("[INFO] Starting capture thread...")
-    CAMERA_INDEX = 1
-    
-    # Graceful handling for cloud environments
-    try:
-        cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_DSHOW if os.name == 'nt' else cv2.CAP_ANY)
-    except Exception:
-        cap = None
-
-    while True:
-        if cap is None or not cap.isOpened():
-            time.sleep(5) # Wait before retrying
-            continue
-            
-        ret, frame = cap.read()
-        if ret:
-            ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
-            if ret:
-                if frame_queue.qsize() < 2:
-                    frame_queue.put(buffer.tobytes())
-        time.sleep(0.03)
-
-# Start thread only if not already running
-threading.Thread(target=capture_obs, daemon=True).start()
+# Replace with your actual ZROK public URL
+ZROK_STREAM_URL = "https://fx4og87yqkex.shares.zrok.io/video_feed"
 
 @app.route('/')
 def index():
-    return "Stream portal active."
+    return f'''
+    <html>
+        <body style="background:#0f172a; color:white; text-align:center; font-family:sans-serif;">
+            <h1>🎥 Live CCTV Stream</h1>
+            <img src="{ZROK_STREAM_URL}" style="max-width:854px; width:100%; border:3px solid #3b82f6; border-radius:12px;">
+        </body>
+    </html>
+    '''
 
-@app.route('/video_feed')
-def video_feed():
-    def generate():
-        while True:
-            frame = frame_queue.get()
-            yield (b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-    return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
