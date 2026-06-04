@@ -1,1 +1,1 @@
-web: gunicorn --workers 2 --worker-class gthread --threads 4 camera:app
+gunicorn --workers 2 --worker-class gthread --threads 4 camera:app
