@@ -83,11 +83,12 @@ def video_feed():
         target_url = f"{ACTIVE_TUNNEL_URL.rstrip('/')}/video_feed"
         try:
             headers = {"User-Agent": "Railway-Cloud-Backend"}
-            response = requests.get(target_url, stream=True, timeout=(5, 15), headers=headers)
+            # Stream timeout optimized for non-blocking proxy transport engines
+            response = requests.get(target_url, stream=True, timeout=(5, 20), headers=headers)
             
             # Verify zrok actually returned the stream instead of a 502 Offline text card
             if response.status_code == 200 and 'multipart/x-mixed-replace' in response.headers.get('Content-Type', ''):
-                for chunk in response.iter_content(chunk_size=4096):
+                for chunk in response.iter_content(chunk_size=8192): # Slightly increased frame buffer allocation
                     if chunk:
                         yield chunk
             else:
@@ -225,8 +226,9 @@ def dashboard():
     
     processed_logs = []
     for log in raw_logs:
+        # FIX: Pre-format the timestamp string here in Python before passing to Jinja context
         processed_logs.append({
-            'timestamp': log.timestamp.strftime('%Y-%m-%d %H:%M:%S UTC'),
+            'timestamp': log.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
             'username': log.username,
             'ip_address': log.ip_address,
             'status': log.status
