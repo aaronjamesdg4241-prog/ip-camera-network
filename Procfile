@@ -1,1 +1,1 @@
-web: gunicorn -b 0.0.0.0:${PORT} --workers 2 --threads 4 --worker-class gthread app:app
+web: gunicorn --workers 2 --worker-class gthread --threads 4 camera:app
