@@ -1,12 +1,3 @@
-The new error in your latest terminal screenshot (`connectEdgeRouter... EOF`) means that your local zrok daemon is failing to establish a stable connection with the zrok backend servers. Looking at your previous logs where `GET /` requests are hitting `3x0uxjl3s7p0.shares.zrok.io`, your web app is attempting to load the root of your zrok share, but it is not hitting an active video streaming endpoint.
-
-If your local script serves the video on a specific subpath like `/video_feed`, your web application will fail to stream if it only requests the root domain (`/`).
-
-To make the feed active, ensure that your local camera streaming application is running on port 5000 and verified working locally via `http://localhost:5000/video_feed` (or whichever path your script uses) before starting the zrok tunnel.
-
-Below is the updated `app.py` source code. It includes the required proxy infrastructure to bypass zrok interstitial pages, maps directly to your active zrok address, and ensures that internal actions are cleanly logged.
-
-```python
 from flask import Flask, render_template_string, request, redirect, url_for, flash, session, Response
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
@@ -27,12 +18,12 @@ db = SQLAlchemy(app)
 
 # 2. Hardcoded Credentials & Stream Config
 VALID_USERNAME = "Pup"
-VALID_PASSWORD = "123"
+VALID_PASSWORD = "123"  # Kept explicitly as a clean string to avoid syntax issues
 
 # TARGET ZROK ENDPOINT:
-# Updated to target the correct stream path. Append your exact stream endpoint path (e.g., /video_feed) if necessary.
-ZROK_STREAM_URL = "https://vmp8ubz7bs1w.shares.zrok.io"
-
+# If your local streaming tool serves the video on a subpath (like /video_feed), 
+# make sure to change this to: "https://3x0uxjl3s7p0.shares.zrok.io/video_feed?skip-zrok-office=true"
+ZROK_STREAM_URL = "https://3x0uxjl3s7p0.shares.zrok.io/?skip-zrok-office=true"
 
 # 3. Database Models
 class AuditLog(db.Model):
@@ -186,132 +177,9 @@ def login():
                 db.session.commit()
             session['logged_in'] = True
             session['username'] = username
+            log_event(ip, "Internal System Event: Session Established Successfully.")
             return redirect(url_for('stream'))
         else:
             if not tracker:
                 tracker = IpTracker(ip_address=ip, failed_attempts=1)
-                db.session.add(tracker)
-            else:
-                tracker.failed_attempts += 1
-            if tracker.failed_attempts >= 3:
-                tracker.banned_until = now + timedelta(hours=1)
-                log_event(ip, f"IP banned for 1 hour after 3 failed attempts.")
-                db.session.commit()
-                return f"<h1>Access Denied</h1><p>Too many failed attempts. Your IP has been banned for 1 hour.</p>", 403
-            else:
-                log_event(ip, f"Failed login attempt ({tracker.failed_attempts}/3 attempts).")
-                db.session.commit()
-                flash(f"Invalid credentials. Attempt {tracker.failed_attempts} of 3.")
-    return render_template_string(LOGIN_HTML_TEMPLATE)
-
-@app.route('/logout')
-def logout():
-    session.clear()
-    return redirect(url_for('login'))
-
-@app.route('/stream')
-def stream():
-    if not session.get('logged_in'):
-        return redirect(url_for('login'))
-    return f'''
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Live CCTV Stream</title>
-        <style>
-            body {{ background: #0f172a; color: white; text-align: center; font-family: sans-serif; padding: 20px; }}
-            .nav {{ margin-bottom: 20px; }}
-            .nav a {{ color: #38bdf8; margin: 0 15px; text-decoration: none; font-weight: bold; }}
-            img {{ width: 100%; max-width: 854px; border: 3px solid #38bdf8; border-radius: 12px; background: #000; }}
-        </style>
-    </head>
-    <body>
-        <div class="nav">
-            <a href="/dashboard">📊 View Security Dashboard</a> | 
-            <a href="/logout">🚪 Logout</a>
-        </div>
-        <h1>🎥 Live CCTV Stream</h1>
-        <img src="{url_for('video_feed_proxy')}" alt="Live Feed Target">
-    </body>
-    </html>
-    '''
-
-@app.route('/video_feed_proxy')
-def video_feed_proxy():
-    """Proxies the zrok stream while stripping out its browser warning pages."""
-    if not session.get('logged_in'):
-        return "Unauthorized", 401
-
-    def generate():
-        headers = {
-            'skip-zrok-office': 'true',
-            'User-Agent': 'CCTV-Portal-Proxy'
-        }
-        try:
-            r = requests.get(ZROK_STREAM_URL, headers=headers, stream=True, timeout=10)
-            for chunk in r.iter_content(chunk_size=1024):
-                if chunk:
-                    yield chunk
-        except Exception as e:
-            print(f"Proxy stream error: {e}")
-
-    return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
-
-@app.route('/dashboard')
-def dashboard():
-    if not session.get('logged_in'):
-        return redirect(url_for('login'))
-    recent_logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(50).all()
-    
-    log_rows = ""
-    for log in recent_logs:
-        log_rows += f"""
-        <tr>
-            <td style="padding: 10px; border-bottom: 1px solid #334155;">{log.timestamp.strftime('%Y-%m-%d %H:%M:%S')} UTC</td>
-            <td style="padding: 10px; border-bottom: 1px solid #334155;">{log.ip_address}</td>
-            <td style="padding: 10px; border-bottom: 1px solid #334155;">{log.action}</td>
-        </tr>
-        """
-    return f'''
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Security Dashboard</title>
-        <style>
-            body {{ background: #0f172a; color: white; font-family: sans-serif; padding: 30px; }}
-            .container {{ max-width: 900px; margin: 0 auto; }}
-            table {{ width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; }}
-            th {{ background: #0284c7; text-align: left; padding: 12px; }}
-            .back-btn {{ display: inline-block; margin-bottom: 20px; color: #38bdf8; text-decoration: none; font-weight: bold; }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <a class="back-btn" href="/stream">← Back to Stream</a>
-            <h2>📊 System Access & Security Logs</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Timestamp</th>
-                        <th>IP Address</th>
-                        <th>Event Logged</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {log_rows if log_rows else "<tr><td colspan='3' style='padding:15px; text-align:center;'>No events logged yet.</td></tr>"}
-                </tbody>
-            </table>
-        </div>
-    </body>
-    </html>
-    '''
-
-# 6. DB Initialization Block
-with app.app_context():
-    db.create_all()
-
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
-
-```
+                db.session.add
