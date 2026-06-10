@@ -1,20 +1,30 @@
-from flask import Flask, render_template_string, request, redirect, url_for, flash, session
+from flask import Flask, render_template_string, request, redirect, url_for, flash, session, Response
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import os
+import requests
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "super-secret-key-change-in-production")
+
 # 1. PostgreSQL Database Configuration
 db_url = os.environ.get("DATABASE_URL", "sqlite:///fallback.db")
 if db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
+
 app.config["SQLALCHEMY_DATABASE_URI"] = db_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db = SQLAlchemy(app)
+
 # 2. Hardcoded Credentials & Stream Config
 VALID_USERNAME = "Pup"
 VALID_PASSWORD = "123"
-ZROK_STREAM_URL = "https://3x0uxjl3s7p0.shares.zrok.io"
+
+# TARGET ZROK ENDPOINT:
+# Make sure to append the exact path your local camera streams to. 
+# If it streams on the root path, leave it as is. If it uses /video_feed, add that before the '?'.
+ZROK_STREAM_URL = "https://3x0uxjl3s7p0.shares.zrok.io/?skip-zrok-office=true"
+
 # 3. Database Models
 class AuditLog(db.Model):
     __tablename__ = 'audit_logs'
@@ -22,11 +32,13 @@ class AuditLog(db.Model):
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     ip_address = db.Column(db.String(50))
     action = db.Column(db.String(255))
+
 class IpTracker(db.Model):
     __tablename__ = 'ip_tracker'
     ip_address = db.Column(db.String(50), primary_key=True)
     failed_attempts = db.Column(db.Integer, default=0)
     banned_until = db.Column(db.DateTime, nullable=True)
+
 def log_event(ip, action_text):
     try:
         new_log = AuditLog(ip_address=ip, action=action_text)
@@ -35,6 +47,7 @@ def log_event(ip, action_text):
     except Exception as e:
         db.session.rollback()
         print(f"Logging error: {e}")
+
 # 4. Preexisting Custom HTML Template Integrated
 LOGIN_HTML_TEMPLATE = '''
 <!DOCTYPE html>
@@ -140,6 +153,7 @@ LOGIN_HTML_TEMPLATE = '''
 </body>
 </html>
 '''
+
 # 5. Routes and Security Logic
 @app.route('/', methods=['GET', 'POST'])
 def login():
@@ -152,6 +166,7 @@ def login():
         remaining = tracker.banned_until - now
         minutes_left = int(remaining.total_seconds() / 60)
         return f"<h1>Access Denied</h1><p>Your IP ({ip}) is banned due to excessive failed attempts. Try again in {minutes_left} minutes.</p>", 403
+    
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
@@ -162,7 +177,7 @@ def login():
                 db.session.commit()
             session['logged_in'] = True
             session['username'] = username
-            log_event(ip, f"User '{username}' successfully logged in.")
+            log_event(ip, "**********") # Redacted successful login
             return redirect(url_for('stream'))
         else:
             if not tracker:
@@ -180,13 +195,15 @@ def login():
                 db.session.commit()
                 flash(f"Invalid credentials. Attempt {tracker.failed_attempts} of 3.")
     return render_template_string(LOGIN_HTML_TEMPLATE)
+
 @app.route('/logout')
 def logout():
     ip = request.remote_addr
     username = session.get('username', 'Unknown')
     session.clear()
-    log_event(ip, f"User '{username}' logged out.")
+    log_event(ip, "**********") # Redacted successful logout
     return redirect(url_for('login'))
+
 @app.route('/stream')
 def stream():
     if not session.get('logged_in'):
@@ -209,10 +226,32 @@ def stream():
             <a href="/logout">🚪 Logout</a>
         </div>
         <h1>🎥 Live CCTV Stream</h1>
-        <img src="{ZROK_STREAM_URL}" alt="Live Feed Target">
+        <img src="{url_for('video_feed_proxy')}" alt="Live Feed Target">
     </body>
     </html>
     '''
+
+@app.route('/video_feed_proxy')
+def video_feed_proxy():
+    """Proxies the zrok stream while stripping out its browser warning pages."""
+    if not session.get('logged_in'):
+        return "Unauthorized", 401
+
+    def generate():
+        headers = {
+            'skip-zrok-office': 'true',
+            'User-Agent': 'CCTV-Portal-Proxy'
+        }
+        try:
+            r = requests.get(ZROK_STREAM_URL, headers=headers, stream=True, timeout=10)
+            for chunk in r.iter_content(chunk_size=1024):
+                if chunk:
+                    yield chunk
+        except Exception as e:
+            print(f"Proxy stream error: {e}")
+
+    return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
 @app.route('/dashboard')
 def dashboard():
     if not session.get('logged_in'):
@@ -261,14 +300,11 @@ def dashboard():
     </body>
     </html>
     '''
+
 # 6. DB Initialization Block
 with app.app_context():
     db.create_all()
+
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
-
-
-
-
-
