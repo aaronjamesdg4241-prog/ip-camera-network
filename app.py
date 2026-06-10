@@ -5,9 +5,11 @@ import os
 import requests
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "super-secret-key-change-in-production")
 
-# 1. PostgreSQL Database Configuration
+# Secure static fallback key for handling production session cookies safely
+app.secret_key = os.environ.get("SECRET_KEY", "prod-security-fallback-string-123789")
+
+# 1. Database Infrastructure Setup
 db_url = os.environ.get("DATABASE_URL", "sqlite:///fallback.db")
 if db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
@@ -16,16 +18,14 @@ app.config["SQLALCHEMY_DATABASE_URI"] = db_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db = SQLAlchemy(app)
 
-# 2. Hardcoded Credentials & Stream Config
+# 2. Access Control Credentials & Zrok Target Configuration
 VALID_USERNAME = "Pup"
-VALID_PASSWORD = "123"  # Kept explicitly as a clean string to avoid syntax issues
+VALID_PASSWORD = "123"
 
-# TARGET ZROK ENDPOINT:
-# If your local streaming tool serves the video on a subpath (like /video_feed), 
-# make sure to change this to: "https://3x0uxjl3s7p0.shares.zrok.io/video_feed?skip-zrok-office=true"
+# TARGET TUNNEL ENDPOINT:
 ZROK_STREAM_URL = "https://3x0uxjl3s7p0.shares.zrok.io/?skip-zrok-office=true"
 
-# 3. Database Models
+# 3. Persistent Storage Schemas
 class AuditLog(db.Model):
     __tablename__ = 'audit_logs'
     id = db.Column(db.Integer, primary_key=True)
@@ -46,9 +46,9 @@ def log_event(ip, action_text):
         db.session.commit()
     except Exception as e:
         db.session.rollback()
-        print(f"Logging error: {e}")
+        print(f"Logging telemetry write error: {e}")
 
-# 4. Custom HTML Template
+# 4. User Interface Matrix Template
 LOGIN_HTML_TEMPLATE = '''
 <!DOCTYPE html>
 <html lang="en">
@@ -113,14 +113,7 @@ LOGIN_HTML_TEMPLATE = '''
             font-weight: 500;
             border-left: 4px solid #ef4444;
         }
-        .footer-text {
-            text-align: center;
-            margin-top: 24px;
-            font-size: 14px;
-            color: #64748b;
-        }
-        .footer-text a { color: #38bdf8; text-decoration: none; }
-        .footer-text a:hover { text-decoration: underline; }
+        .footer-text { text-align: center; margin-top: 24px; font-size: 14px; color: #64748b; }
     </style>
 </head>
 <body>
@@ -129,9 +122,7 @@ LOGIN_HTML_TEMPLATE = '''
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 {% for category, message in messages %}
-                    <div class="flash-messages">
-                        {{ message }}
-                    </div>
+                    <div class="flash-messages">{{ message }}</div>
                 {% endfor %}
             {% endif %}
         {% endwith %}
@@ -146,22 +137,23 @@ LOGIN_HTML_TEMPLATE = '''
             </div>
             <button type="submit">Authenticate Session</button>
         </form>
-        <div class="footer-text">
-            System Administration Portal
-        </div>
+        <div class="footer-text">System Administration Portal</div>
     </div>
 </body>
 </html>
 '''
 
-# 5. Routes and Security Logic
+# 5. Route Core Logic Block
 @app.route('/', methods=['GET', 'POST'])
 def login():
     if session.get('logged_in'):
         return redirect(url_for('stream'))
-    ip = request.remote_addr
+        
+    ip = request.remote_addr or "127.0.0.1"
     now = datetime.utcnow()
+    
     tracker = IpTracker.query.filter_by(ip_address=ip).first()
+
     if tracker and tracker.banned_until and tracker.banned_until > now:
         remaining = tracker.banned_until - now
         minutes_left = int(remaining.total_seconds() / 60)
@@ -182,4 +174,11 @@ def login():
         else:
             if not tracker:
                 tracker = IpTracker(ip_address=ip, failed_attempts=1)
-                db.session.add
+                db.session.add(tracker)
+            else:
+                tracker.failed_attempts += 1
+            if tracker.failed_attempts >= 3:
+                tracker.banned_until = now + timedelta(hours=1)
+                log_event(ip, f"IP banned for 1 hour after 3 failed attempts.")
+                db.session.commit()
+                return f"<h1>Access Denied</h1><p>Too many failed attempts. Your
