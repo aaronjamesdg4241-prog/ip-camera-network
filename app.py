@@ -1,7 +1,8 @@
-from flask import Flask, render_template_string, request, redirect, url_for, flash, session
+from flask import Flask, render_template_string, request, redirect, url_for, flash, session, Response
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import os
+import requests
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "super-secret-key-change-in-production")
@@ -18,7 +19,10 @@ db = SQLAlchemy(app)
 # 2. Hardcoded Credentials & Stream Config
 VALID_USERNAME = "Pup"
 VALID_PASSWORD = "123"
-ZROK_STREAM_URL = "https://fx4og87yqkex.shares.zrok.io/video_feed"
+
+# TARGET ZROK ENDPOINT:
+# Note: Added '?skip-zrok-office=true' query parameter to bypass the interstitial warning page.
+ZROK_STREAM_URL = "https://27yv28a6cfyh.shares.zrok.io/video_feed?skip-zrok-office=true"
 
 # 3. Database Models
 class AuditLog(db.Model):
@@ -192,7 +196,7 @@ def login():
 
             if tracker.failed_attempts >= 3:
                 tracker.banned_until = now + timedelta(hours=1)
-                log_event(ip, f"IP banned for 1 hour after 3 failed attempts.")
+                log_event(ip, "IP banned for 1 hour after 3 failed attempts.")
                 db.session.commit()
                 return f"<h1>Access Denied</h1><p>Too many failed attempts. Your IP has been banned for 1 hour.</p>", 403
             else:
@@ -233,10 +237,33 @@ def stream():
             <a href="/logout">🚪 Logout</a>
         </div>
         <h1>🎥 Live CCTV Stream</h1>
-        <img src="{ZROK_STREAM_URL}" alt="Live Feed Target">
+        <img src="{url_for('video_feed_proxy')}" alt="Live Feed Target">
     </body>
     </html>
     '''
+
+@app.route('/video_feed_proxy')
+def video_feed_proxy():
+    """Proxies the zrok stream while stripping out its browser warning pages."""
+    if not session.get('logged_in'):
+        return "Unauthorized", 401
+
+    def generate():
+        # Inject the mandatory zrok bypass headers alongside requests
+        headers = {
+            'skip-zrok-office': 'true',
+            'User-Agent': 'CCTV-Portal-Proxy'
+        }
+        try:
+            # Connect to your zrok instance stream
+            r = requests.get(ZROK_STREAM_URL, headers=headers, stream=True, timeout=10)
+            for chunk in r.iter_content(chunk_size=1024):
+                if chunk:
+                    yield chunk
+        except Exception as e:
+            print(f"Proxy stream error: {e}")
+
+    return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route('/dashboard')
 def dashboard():
