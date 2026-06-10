@@ -14,7 +14,7 @@ db = SQLAlchemy(app)
 # 2. Hardcoded Credentials & Stream Config
 VALID_USERNAME = "Pup"
 VALID_PASSWORD = "123"
-ZROK_STREAM_URL = "https://27yv28a6cfyh.shares.zrok.io/video_feed"
+ZROK_STREAM_URL = "https://3x0uxjl3s7p0.shares.zrok.io"
 # 3. Database Models
 class AuditLog(db.Model):
     __tablename__ = 'audit_logs'
