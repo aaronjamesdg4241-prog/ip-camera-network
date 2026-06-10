@@ -23,7 +23,7 @@ VALID_PASSWORD = "123"
 # TARGET ZROK ENDPOINT:
 # Make sure to append the exact path your local camera streams to. 
 # If it streams on the root path, leave it as is. If it uses /video_feed, add that before the '?'.
-ZROK_STREAM_URL = "https:// xarbhgbyqpha.shares.zrok.io"
+ZROK_STREAM_URL = "https://vmp8ubz7bs1w.shares.zrok.io"
 
 # 3. Database Models
 class AuditLog(db.Model):
