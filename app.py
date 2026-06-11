@@ -19,7 +19,7 @@ db = SQLAlchemy(app)
 VALID_USERNAME = "Pup"
 VALID_PASSWORD = "123"
 # Updated to use your new zrok tunnel address
-ZROK_STREAM_URL = "https://e7wxpwmjlifw.shares.zrok.io/video_feed"
+ZROK_STREAM_URL = "https://ev5lkbvxw5oe.shares.zrok.io/video_feed"
 
 # 3. Database Models
 class AuditLog(db.Model):
