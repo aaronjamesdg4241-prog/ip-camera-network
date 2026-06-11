@@ -8,9 +8,10 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 COPY requirements.txt .
+
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# FIX: Switch to gthread workers, allocate concurrent threads, and extend timeout limits
-CMD ["sh", "-c", "python seed.py && gunicorn --workers=2 --threads=4 --worker-class=gthread --timeout=300 -b 0.0.0.0:$PORT app:app"]
+# FIX: Dynamically read the environment variable $PORT and run multiple threads to manage stream data blocks
+CMD ["sh", "-c", "python seed.py && gunicorn -b 0.0.0.0:${PORT:-8080} --workers 2 --threads 4 --worker-class gthread app:app"]
